@@ -1,4 +1,4 @@
-### myShell goals:
+### myShell.c goals:
 - [ ] User input with username, hostname and pwd
 - [ ] Parser
 - [ ] Command execution using fork() and exec()
