@@ -7,3 +7,4 @@
 - [ ] Pipes
 - [ ] Background process using '&' character at end
 - [ ] Redirection operators '<' and '>' using dup2()
+- [ ] Multiline input using '\' character at end
