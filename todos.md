@@ -3,11 +3,11 @@
 - [X] Parser
 - [ ] Command execution using fork() and exec()
 - [ ] Signal Handling
-- [ ] Command history / Last Command
+- [x] Command history / Last Command
 - [ ] Pipes
 - [ ] Background process using '&' character at end
 - [ ] Redirection operators '<' and '>' using dup2()
 - [ ] Multiline input using '\' character at end
-- [ ] Add support for arrow keys
-- [ ] Tab completion?
+- [x] Add support for arrow keys
+- [x] Tab completion?
 - [X] Add Colors
