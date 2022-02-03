@@ -1,2 +1,3 @@
 process_tree.o
 myShell.o
+.myShell_history

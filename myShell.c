@@ -3,16 +3,14 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <readline/readline.h>
+#include <readline/history.h>
 
-#define USE_READLINE 0
 #define CMD_MAX 1024
 #define PWD_MAX 1024
 #define MAX_ARGS (CMD_MAX/2)
-
-#if USE_READLINE
-#include <readline/readline.h>
-#include <readline/history.h>
-#endif
+#define SAVE_EMPTY_CMD 0
 
 #define RED     "\x1b[31m"
 #define GREEN   "\x1b[32m"
@@ -23,6 +21,17 @@
 #define WHITE   "\x1b[37m"
 #define RESET   "\x1b[0m"
 #define BRIGHT  "\x1b[1m"
+
+FILE *hist_file;
+int use_readline = 0;
+char last_cmd[CMD_MAX];
+
+void closeShell() {
+	if (hist_file)
+		fclose(hist_file);
+	printf("\nExiting..\n");
+	exit(0);
+}
 
 char* promptString(){
 	char user[LOGIN_NAME_MAX], host[HOST_NAME_MAX], cwd[PWD_MAX];
@@ -57,31 +66,40 @@ void parser(char* c) {
 	}
 }
 
+void addToHistory(char* command) {
+	if (use_readline){
+		add_history(command);
+		append_history(1, ".myShell_history");
+	}
+	else if (hist_file) {
+		// fprintf(hist_file, "#%ld\n%s\n", time(0), command);
+		fprintf(hist_file, "%s\n", command);
+		fflush(hist_file);
+		strcpy(last_cmd, command);
+	}
+}
+
 char* readCommand(){
-	char *prompt = promptString();
-	#if USE_READLINE
-		char* c = readline(prompt);
+	char *prompt = promptString(), *c;
+	if (use_readline) {
+		c = readline(prompt);
 		free(prompt);
 
-		if (!c) {
-			printf("\nExiting..\n");
-			exit(0);
-		}
+		if (!c)
+			closeShell();
 
-		add_history(c);
 		if (strlen(c) >= CMD_MAX) {
-			printf("Argument list too long, input not executed\n");
+			printf("Argument list too long, input discarded\n");
 			c = "";
 		}
-	#else
+	}
+	else {
 		printf("%s", prompt);
 		free(prompt);
 
-		char *c = (char*)malloc(CMD_MAX);
-		if (!fgets(c, CMD_MAX, stdin)) {
-			printf("\nExiting..\n");
-			exit(0);
-		}
+		c = (char*)malloc(CMD_MAX);
+		if (!fgets(c, CMD_MAX, stdin))
+			closeShell();
 
 		size_t len = strlen(c);
 		if (c[len - 1] == '\n')
@@ -91,25 +109,34 @@ char* readCommand(){
 			printf("Argument list too long, input dicarded\n");
 			c[0] = '\0';
 		}
-	#endif
+	}
+	if (strlen(c) || SAVE_EMPTY_CMD)
+		addToHistory(c);
+
 	char *cmd = malloc(strlen(c)+1);
 	strcpy(cmd, c);
 	free(c);
 	return cmd;
 }
 
-void initText() {
+void init() {
 	printf("\n-------Welcome to myShell-------\n"
 		"Project created by Gandharv Jain\n");
-	if (USE_READLINE)
+	if (use_readline)
 		printf("    (Using readline library)    \n\n");
 	else
 		printf("(Without using readline library)\n\n");
+	fflush(stdout);
+
+	if (use_readline)
+		read_history_range(".myShell_history", 0, -1);
+	else  if (!( hist_file = fopen(".myShell_history", "a") ))
+		printf("Warning! Could not load \".myShell_history\", histroy will not be saved!\n");
 }
 
 void userMenu() {
 	int running = 1;
-	initText();
+	init();
 
 	while (running) {
 		char* cmd = readCommand();
@@ -127,6 +154,8 @@ void userMenu() {
 }
 
 int main(int argc, char const *argv[]) {
+	if (argc > 1)
+		use_readline = atoi(argv[1]);
 	userMenu();
 	return 0;
 }
