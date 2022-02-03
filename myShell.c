@@ -4,12 +4,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <sys/wait.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 
 #define CMD_MAX 1024
 #define PWD_MAX 1024
-#define MAX_ARGS (CMD_MAX/2)
+#define MAX_ARGS ((int) CMD_MAX/2)
 #define SAVE_EMPTY_CMD 0
 
 #define RED     "\x1b[31m"
@@ -48,22 +49,39 @@ char* promptString(){
 	return str;
 }
 
-void strDelim(char* cmd, char* delim, char **args) {
-	args[0] = strtok(cmd, delim);
-	for (int i = 1; i < MAX_ARGS && args[i-1]; ++i) {
-		args[i] = strtok(NULL, delim);
+void commandHandler(int argc, char **args) {
+	int pid = fork();
+	if (pid < 0) 
+		printf("Couldn't create child process\n");
+	else if (pid > 0)
+		wait(0);
+	else if (execvp(args[0], args)) {
+		printf("Couldn't execute command\n");
+		exit(1);
 	}
 }
 
-void parser(char* c) {
+int tokenise(char* cmd, char* delim, char **args) {
+	args[0] = strtok(cmd, delim);
+	int i = 1;
+	while (i < MAX_ARGS && args[i-1])
+		args[i++] = strtok(NULL, delim);
+	return i - 1;
+}
+
+void processCommand(char* c) {
 	char *args[MAX_ARGS], cmd[CMD_MAX];
 	strcpy(cmd, c);
-	strDelim(cmd, " ", args);
+	int argc = tokenise(cmd, " ", args);
 
-	printf("Arguments:\n");
-	for (int i = 0; i < MAX_ARGS && args[i]; ++i) {
-		printf("%s\n", args[i]);
-	}
+
+	// printf("Arguments:\n");
+	// for (int i = 0; i < MAX_ARGS && args[i]; ++i) {
+	// 	printf("%s\n", args[i]);
+	// }
+	// printf("---\n");
+
+	commandHandler(argc, args);
 }
 
 void addToHistory(char* command) {
@@ -134,7 +152,7 @@ void init() {
 		printf("Warning! Could not load \".myShell_history\", histroy will not be saved!\n");
 }
 
-void userMenu() {
+void myShell() {
 	int running = 1;
 	init();
 
@@ -145,8 +163,10 @@ void userMenu() {
 			continue;
 
 		printf(RESET);
+		fflush(stdout);
 
-		parser(cmd);
+		processCommand(cmd);
+
 		printf("Your command: \'%s\' of length %ld\n", cmd, strlen(cmd));
 
 		free(cmd);
@@ -156,6 +176,8 @@ void userMenu() {
 int main(int argc, char const *argv[]) {
 	if (argc > 1)
 		use_readline = atoi(argv[1]);
-	userMenu();
+	myShell();
 	return 0;
 }
+
+// main -> myShell --(init)-> readCommand --(promptString, addToHistory)-> processCommand --(tokenise)-> commandHandler

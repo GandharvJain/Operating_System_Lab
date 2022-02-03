@@ -1,13 +1,14 @@
 ### myShell.c goals:
 - [X] User input with username, hostname and pwd
 - [X] Parser
-- [ ] Command execution using fork() and exec()
+- [X] Command execution using fork() and exec()
 - [ ] Signal Handling
-- [x] Command history / Last Command
+- [X] Command history / Last Command
 - [ ] Pipes
 - [ ] Background process using '&' character at end
 - [ ] Redirection operators '<' and '>' using dup2()
 - [ ] Multiline input using '\' character at end
+- [ ] Multiple commands using ';', '&&' and '||' characters
 - [x] Add support for arrow keys
 - [x] Tab completion?
 - [X] Add Colors
