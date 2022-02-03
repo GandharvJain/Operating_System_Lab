@@ -8,9 +8,11 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 
-#define CMD_MAX 1024
-#define PWD_MAX 1024
-#define MAX_ARGS ((int) CMD_MAX/2)
+#define CMD_MAX_LEN 1024
+#define PWD_MAX_LEN 1024
+#define MAX_ARGS ((int) CMD_MAX_LEN/2)
+#define MAX_CMDS ((int) CMD_MAX_LEN/2)
+
 #define SAVE_EMPTY_CMD 0
 
 #define RED     "\x1b[31m"
@@ -25,7 +27,7 @@
 
 FILE *hist_file;
 int use_readline = 0;
-char last_cmd[CMD_MAX];
+char last_cmd[CMD_MAX_LEN];
 
 void closeShell() {
 	if (hist_file)
@@ -35,7 +37,7 @@ void closeShell() {
 }
 
 char* promptString(){
-	char user[LOGIN_NAME_MAX], host[HOST_NAME_MAX], cwd[PWD_MAX];
+	char user[LOGIN_NAME_MAX], host[HOST_NAME_MAX], cwd[PWD_MAX_LEN];
 	char *home = getenv("HOME");
 	gethostname(host, sizeof(host));
 	getlogin_r(user, sizeof(user));
@@ -44,20 +46,33 @@ char* promptString(){
 		memmove(&cwd[1], &cwd[strlen(home)], strlen(cwd) - strlen(home) + 1);
 		cwd[0] = '~';
 	}
-	char* str = (char*)malloc(7*8 + LOGIN_NAME_MAX + HOST_NAME_MAX + PWD_MAX + 5);
+	char* str = (char*)malloc(7*8 + LOGIN_NAME_MAX + HOST_NAME_MAX + PWD_MAX_LEN + 5);
 	sprintf(str, BRIGHT RED "%s@%s" RESET ":" BRIGHT CYAN "%s\n" BRIGHT YELLOW "$ ", user, host, cwd);
 	return str;
 }
 
-void commandHandler(int argc, char **args) {
+void commandHandler(int argc, char **args, int* p1, int* p2) {
 	int pid = fork();
-	if (pid < 0) 
-		printf("Couldn't create child process\n");
-	else if (pid > 0)
+	if (pid < 0)
+		printf("Couldn't fork\n");
+	else if (pid > 0) {
+		close(p1[0]);
+		close(p1[1]);
 		wait(0);
-	else if (execvp(args[0], args)) {
-		printf("Couldn't execute command\n");
-		exit(1);
+	}
+	else {
+		close(p1[1]);
+		dup2(p1[0], STDIN_FILENO);
+		close(p1[0]);
+
+		close(p2[0]);
+		dup2(p2[1], STDOUT_FILENO);
+		close(p2[1]);
+
+		if (execvp(args[0], args)) {
+			printf("Couldn't execute %s\n", args[0]);
+			exit(1);
+		}
 	}
 }
 
@@ -70,18 +85,42 @@ int tokenise(char* cmd, char* delim, char **args) {
 }
 
 void processCommand(char* c) {
-	char *args[MAX_ARGS], cmd[CMD_MAX];
+	char cmd[CMD_MAX_LEN], *cmds[MAX_CMDS];
 	strcpy(cmd, c);
-	int argc = tokenise(cmd, " ", args);
+	int num_cmds = tokenise(cmd, "|", cmds);
+	printf("%d\n", num_cmds);
+
+	int pipes[num_cmds + 1][2];
+	for (int i = 1; i < num_cmds; ++i)
+		pipe(pipes[i]);
+
+	pipes[num_cmds][0] = pipes[0][1] = -1;
+	dup2(STDIN_FILENO, pipes[0][0]);
+	dup2(STDOUT_FILENO, pipes[num_cmds][1]);
 
 
-	// printf("Arguments:\n");
-	// for (int i = 0; i < MAX_ARGS && args[i]; ++i) {
-	// 	printf("%s\n", args[i]);
+	for (int i = 0; i < num_cmds; ++i) {
+		char *args[MAX_ARGS];
+		int argc = tokenise(cmds[i], " ", args);
+
+		printf("Arguments:\n");
+		for (int i = 0; i < MAX_ARGS && args[i]; ++i) {
+		     printf("%s\n", args[i]);
+		}
+		printf("---\n");
+
+		commandHandler(argc, args, pipes[i], pipes[i+1]);
+	}
+
+	int wpid, status = 0;
+
+	// for (int i = 1; i < num_cmds; ++i) {
+	// 	close(pipes[i][0]);
+	// 	close(pipes[i][1]);
 	// }
-	// printf("---\n");
 
-	commandHandler(argc, args);
+	// while ((wpid = wait(&status)) > 0);
+
 }
 
 void addToHistory(char* command) {
@@ -103,10 +142,10 @@ char* readCommand(){
 		c = readline(prompt);
 		free(prompt);
 
-		if (!c)
+		if (c == NULL)
 			closeShell();
 
-		if (strlen(c) >= CMD_MAX) {
+		if (strlen(c) >= CMD_MAX_LEN) {
 			printf("Argument list too long, input discarded\n");
 			c = "";
 		}
@@ -115,8 +154,8 @@ char* readCommand(){
 		printf("%s", prompt);
 		free(prompt);
 
-		c = (char*)malloc(CMD_MAX);
-		if (!fgets(c, CMD_MAX, stdin))
+		c = (char*)malloc(CMD_MAX_LEN);
+		if (fgets(c, CMD_MAX_LEN, stdin) == NULL)
 			closeShell();
 
 		size_t len = strlen(c);
