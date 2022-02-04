@@ -14,8 +14,8 @@
 #define MAX_ARGS ((int) CMD_MAX_LEN/2)
 #define MAX_CMDS ((int) CMD_MAX_LEN/2)
 
-#define SAVE_EMPTY_CMD 0
-#define DEBUG_LEVEL 0
+#define SAVE_EMPTY_CMD 0	//0 for saving empty commands disabled
+#define DEBUG_LEVEL 0		//0 for none, 1 for minimal, 2 for full
 
 #define RED     "\x1b[31m"
 #define GREEN   "\x1b[32m"
@@ -25,13 +25,19 @@
 #define CYAN    "\x1b[36m"
 #define WHITE   "\x1b[37m"
 #define RESET   "\x1b[0m"
+/**********************************************************************************
+*********************************Error Checking************************************
+**********************************************************************************/
 #define BRIGHT  "\x1b[1m"
 
 FILE *hist_file;
 int use_readline = 0;
 char last_cmd[CMD_MAX_LEN];
 
-// Error checking
+/**********************************************************************************
+*********************************Error Checking************************************
+**********************************************************************************/
+
 void DBG_checkClose(int e, char *str, char *mode, char *prntOrChld, char *cmd) {
 	if (DEBUG_LEVEL > 1 && e) {
 		printf("Error %d closing %s end of %s pipe in %s for process %s\n", errno, mode, str, prntOrChld, cmd);
@@ -74,6 +80,9 @@ void DBG_checkCmds(int num_cmds, char **cmds) {
 	}
 }
 
+/**********************************************************************************
+*********************************myShell functions*********************************
+**********************************************************************************/
 
 void closeShell() {
 	if (hist_file)
@@ -237,10 +246,8 @@ char* readCommand(){
 			closeShell();
 
 		size_t len = strlen(c);
-		if (c[len - 1] == '\n') {
+		if (c[len - 1] == '\n')
 			c[len - 1] = '\0';
-			c[len] = '\0';
-		}
 		else {
 			while ((getchar()) != '\n');
 			printf("Argument list too long, input dicarded\n");
