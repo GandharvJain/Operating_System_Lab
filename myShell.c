@@ -7,6 +7,7 @@
 #include <sys/wait.h>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <errno.h>
 
 #define CMD_MAX_LEN 1024
 #define PWD_MAX_LEN 1024
@@ -14,6 +15,7 @@
 #define MAX_CMDS ((int) CMD_MAX_LEN/2)
 
 #define SAVE_EMPTY_CMD 0
+#define DEBUG_LEVEL 0
 
 #define RED     "\x1b[31m"
 #define GREEN   "\x1b[32m"
@@ -28,6 +30,50 @@
 FILE *hist_file;
 int use_readline = 0;
 char last_cmd[CMD_MAX_LEN];
+
+// Error checking
+void DBG_checkClose(int e, char *str, char *mode, char *prntOrChld, char *cmd) {
+	if (DEBUG_LEVEL > 1 && e) {
+		printf("Error %d closing %s end of %s pipe in %s for process %s\n", errno, mode, str, prntOrChld, cmd);
+	}
+}
+void DBG_checkDup(int e, char *Old, char *New, char *cmd) {
+	if (DEBUG_LEVEL > 1 && e) {
+		printf("Error %d duplicating %s fd to %s fd in process %s\n", errno, Old, New, cmd);
+	}
+}
+void DBG_checkWait(int e) {
+	if (DEBUG_LEVEL > 1 && e < 0) {
+		printf("Error %d returned by wait\n", errno);
+	}
+}
+void DBG_checkPipe(int e) {
+	if (DEBUG_LEVEL > 1 && e) {
+		printf("Error %d creating pipe\n", errno);
+	}
+}
+void DBG_checkMalloc(char *e) {
+	if (DEBUG_LEVEL > 1 && e == NULL) {
+		printf("Error %d allocating memory\n", errno);
+	}
+}
+void DBG_checkArgs(int argc, char **args) {
+	if (DEBUG_LEVEL) {
+		printf("Arguments (%d):\n", argc);
+		for (int i = 0; i < MAX_ARGS && args[i]; ++i) {
+		     printf("(%s)\n", args[i]);
+		}
+		printf("-----\n");
+	}
+}
+void DBG_checkCmds(int num_cmds, char **cmds) {
+	if (DEBUG_LEVEL) {
+		printf("No. of Cmds = %d\n", num_cmds);
+		for (int i = 0; i < num_cmds; ++i)
+			printf("Cmd : (%s)\n", cmds[i]);
+	}
+}
+
 
 void closeShell() {
 	if (hist_file)
@@ -47,6 +93,8 @@ char* promptString(){
 		cwd[0] = '~';
 	}
 	char* str = (char*)malloc(7*8 + LOGIN_NAME_MAX + HOST_NAME_MAX + PWD_MAX_LEN + 5);
+	DBG_checkMalloc(str);
+
 	sprintf(str, BRIGHT RED "%s@%s" RESET ":" BRIGHT CYAN "%s\n" BRIGHT YELLOW "$ ", user, host, cwd);
 	return str;
 }
@@ -56,18 +104,26 @@ void commandHandler(int argc, char **args, int* p1, int* p2) {
 	if (pid < 0)
 		printf("Couldn't fork\n");
 	else if (pid > 0) {
-		close(p1[0]);
-		close(p1[1]);
-		wait(0);
+		if (p1[0] != -1)
+			DBG_checkClose(close(p1[0]), " input", "r", "parent", args[0]);
+		if (p1[1] != -1)
+			DBG_checkClose(close(p1[1]), " input", "w", "parent", args[0]);
+		DBG_checkWait(wait(0));
 	}
 	else {
-		close(p1[1]);
-		dup2(p1[0], STDIN_FILENO);
-		close(p1[0]);
+		if (p1[1] != -1)
+			DBG_checkClose(close(p1[1]), " input", "w", " child", args[0]);
+		if (p1[0] != -1) {
+			DBG_checkDup(dup2(p1[0], STDIN_FILENO), "r-in", "stdin", args[0]);
+			DBG_checkClose(close(p1[0]), " input", "r", " child", args[0]);
+		}
 
-		close(p2[0]);
-		dup2(p2[1], STDOUT_FILENO);
-		close(p2[1]);
+		if (p2[0] != -1)
+			DBG_checkClose(close(p2[0]), "output", "r", " child", args[0]);
+		if (p2[1] != -1) {
+			DBG_checkDup(dup2(p2[1], STDOUT_FILENO), "w-out", "stdout", args[0]);
+			DBG_checkClose(close(p2[1]), "output", "w", " child", args[0]);
+		}
 
 		if (execvp(args[0], args)) {
 			printf("Couldn't execute %s\n", args[0]);
@@ -76,51 +132,71 @@ void commandHandler(int argc, char **args, int* p1, int* p2) {
 	}
 }
 
-int tokenise(char* cmd, char* delim, char **args) {
-	args[0] = strtok(cmd, delim);
-	int i = 1;
-	while (i < MAX_ARGS && args[i-1])
-		args[i++] = strtok(NULL, delim);
-	return i - 1;
+int tokenise(char* cmd, char* delim, char **args, int ignoreQuotes) {
+	int i = 0, n = strlen(delim), m = strlen(cmd);
+	int foundDelim = 1;
+
+	for (int j = 0; j < m; ++j) {
+
+		while (strncmp(cmd + j, delim, n) == 0) {
+		    cmd[j] = '\0';
+		    j += n;
+		    foundDelim = 1;
+		}
+
+		if (cmd[j] == '\"' || cmd[j] == '\'') {
+			int s = j++;
+			while (cmd[j] != cmd[s] && j < m) ++j;
+			int e = j++;
+
+			if (!ignoreQuotes) {
+				cmd[s] = '\0';
+				args[i++] = cmd + s + 1;
+				cmd[e] = '\0';
+			}
+		}
+
+		while (strncmp(cmd + j, delim, n) == 0) {
+		    cmd[j] = '\0';
+		    j += n;
+		    foundDelim = 1;
+		}
+
+		if (foundDelim && j < m) {
+			args[i++] = cmd + j;
+			foundDelim = 0;
+		}
+	}
+	args[i] = NULL;
+	return i;
+}
+
+void initPipes(int n, int pipes[][2]) {
+	for (int i = 1; i < n; ++i)
+		DBG_checkPipe(pipe(pipes[i]));
+
+	pipes[0][0] = pipes[0][1] = -1;
+	pipes[n][0] = pipes[n][1] = -1;
 }
 
 void processCommand(char* c) {
 	char cmd[CMD_MAX_LEN], *cmds[MAX_CMDS];
 	strcpy(cmd, c);
-	int num_cmds = tokenise(cmd, "|", cmds);
-	printf("%d\n", num_cmds);
+	int num_cmds = tokenise(cmd, "|", cmds, 1);
+
+	DBG_checkCmds(num_cmds, cmds);
 
 	int pipes[num_cmds + 1][2];
-	for (int i = 1; i < num_cmds; ++i)
-		pipe(pipes[i]);
-
-	pipes[num_cmds][0] = pipes[0][1] = -1;
-	dup2(STDIN_FILENO, pipes[0][0]);
-	dup2(STDOUT_FILENO, pipes[num_cmds][1]);
-
+	initPipes(num_cmds, pipes);
 
 	for (int i = 0; i < num_cmds; ++i) {
 		char *args[MAX_ARGS];
-		int argc = tokenise(cmds[i], " ", args);
+		int argc = tokenise(cmds[i], " ", args, 0);
 
-		printf("Arguments:\n");
-		for (int i = 0; i < MAX_ARGS && args[i]; ++i) {
-		     printf("%s\n", args[i]);
-		}
-		printf("---\n");
+		DBG_checkArgs(argc, args);
 
 		commandHandler(argc, args, pipes[i], pipes[i+1]);
 	}
-
-	int wpid, status = 0;
-
-	// for (int i = 1; i < num_cmds; ++i) {
-	// 	close(pipes[i][0]);
-	// 	close(pipes[i][1]);
-	// }
-
-	// while ((wpid = wait(&status)) > 0);
-
 }
 
 void addToHistory(char* command) {
@@ -155,12 +231,16 @@ char* readCommand(){
 		free(prompt);
 
 		c = (char*)malloc(CMD_MAX_LEN);
+		DBG_checkMalloc(c);
+
 		if (fgets(c, CMD_MAX_LEN, stdin) == NULL)
 			closeShell();
 
 		size_t len = strlen(c);
-		if (c[len - 1] == '\n')
+		if (c[len - 1] == '\n') {
 			c[len - 1] = '\0';
+			c[len] = '\0';
+		}
 		else {
 			while ((getchar()) != '\n');
 			printf("Argument list too long, input dicarded\n");
@@ -171,6 +251,8 @@ char* readCommand(){
 		addToHistory(c);
 
 	char *cmd = malloc(strlen(c)+1);
+	DBG_checkMalloc(cmd);
+
 	strcpy(cmd, c);
 	free(c);
 	return cmd;
@@ -206,8 +288,6 @@ void myShell() {
 
 		processCommand(cmd);
 
-		printf("Your command: \'%s\' of length %ld\n", cmd, strlen(cmd));
-
 		free(cmd);
 	}
 }
@@ -220,3 +300,7 @@ int main(int argc, char const *argv[]) {
 }
 
 // main -> myShell --(init)-> readCommand --(promptString, addToHistory)-> processCommand --(tokenise)-> commandHandler
+
+
+
+		// printf("Your command: \'%s\' of length %ld\n", cmd, strlen(cmd));

@@ -12,4 +12,5 @@
 - [x] Add support for arrow keys
 - [x] Tab completion?
 - [X] Add Colors
-- [ ] Replace 'strtok' with custom function to deal with quotations
+- [X] Replace 'strtok' with custom function to deal with quotations
+- [X] Add Debugging options
