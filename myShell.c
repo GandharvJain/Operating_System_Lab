@@ -5,6 +5,7 @@
 #include <string.h>
 #include <time.h>
 #include <sys/wait.h>
+#include <signal.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 #include <errno.h>
@@ -13,9 +14,10 @@
 #define PWD_MAX_LEN 1024
 #define MAX_ARGS ((int) CMD_MAX_LEN/2)
 #define MAX_CMDS ((int) CMD_MAX_LEN/2)
+#define MAX_STATEMENTS ((int) CMD_MAX_LEN/2)
 
 #define SAVE_EMPTY_CMD 0	//0 for saving empty commands disabled
-#define DEBUG_LEVEL 0		//0 for none, 1 for minimal, 2 for full
+#define DEBUG_LEVEL 2		//0 for none, 1 for minimal, 2 for full
 
 #define RED     "\x1b[31m"
 #define GREEN   "\x1b[32m"
@@ -32,6 +34,7 @@
 
 FILE *hist_file;
 int use_readline = 0;
+int process_count = 0;
 char last_cmd[CMD_MAX_LEN];
 
 /**********************************************************************************
@@ -79,6 +82,15 @@ void DBG_checkCmds(int num_cmds, char **cmds) {
 			printf("Cmd : (%s)\n", cmds[i]);
 	}
 }
+void DBG_checkStatements(int num_statements, char **statements) {
+	if (DEBUG_LEVEL) {
+		printf("Statements (%d):\n", num_statements);
+		for (int i = 0; i < MAX_STATEMENTS && statements[i]; ++i) {
+		     printf("(%s)\n", statements[i]);
+		}
+		printf("-----------------\n");
+	}
+}
 
 /**********************************************************************************
 *********************************myShell functions*********************************
@@ -108,30 +120,31 @@ char* promptString(){
 	return str;
 }
 
-void commandHandler(int argc, char **args, int* p1, int* p2) {
+int commandExec(int argc, char **args, int* p_in, int* p_out) {
 	int pid = fork();
 	if (pid < 0)
 		printf("Couldn't fork\n");
 	else if (pid > 0) {
-		if (p1[0] != -1)
-			DBG_checkClose(close(p1[0]), " input", "r", "parent", args[0]);
-		if (p1[1] != -1)
-			DBG_checkClose(close(p1[1]), " input", "w", "parent", args[0]);
+		if (p_in[0] != -1)
+			DBG_checkClose(close(p_in[0]), " input", "r", "parent", args[0]);
+		if (p_in[1] != -1)
+			DBG_checkClose(close(p_in[1]), " input", "w", "parent", args[0]);
+
 		DBG_checkWait(wait(0));
 	}
 	else {
-		if (p1[1] != -1)
-			DBG_checkClose(close(p1[1]), " input", "w", " child", args[0]);
-		if (p1[0] != -1) {
-			DBG_checkDup(dup2(p1[0], STDIN_FILENO), "r-in", "stdin", args[0]);
-			DBG_checkClose(close(p1[0]), " input", "r", " child", args[0]);
+		if (p_in[1] != -1)
+			DBG_checkClose(close(p_in[1]), " input", "w", " child", args[0]);
+		if (p_in[0] != -1) {
+			DBG_checkDup(dup2(p_in[0], STDIN_FILENO), "r-in", "stdin", args[0]);
+			DBG_checkClose(close(p_in[0]), " input", "r", " child", args[0]);
 		}
 
-		if (p2[0] != -1)
-			DBG_checkClose(close(p2[0]), "output", "r", " child", args[0]);
-		if (p2[1] != -1) {
-			DBG_checkDup(dup2(p2[1], STDOUT_FILENO), "w-out", "stdout", args[0]);
-			DBG_checkClose(close(p2[1]), "output", "w", " child", args[0]);
+		if (p_out[0] != -1)
+			DBG_checkClose(close(p_out[0]), "output", "r", " child", args[0]);
+		if (p_out[1] != -1) {
+			DBG_checkDup(dup2(p_out[1], STDOUT_FILENO), "w-out", "stdout", args[0]);
+			DBG_checkClose(close(p_out[1]), "output", "w", " child", args[0]);
 		}
 
 		if (execvp(args[0], args)) {
@@ -188,10 +201,10 @@ void initPipes(int n, int pipes[][2]) {
 	pipes[n][0] = pipes[n][1] = -1;
 }
 
-void processCommand(char* c) {
-	char cmd[CMD_MAX_LEN], *cmds[MAX_CMDS];
-	strcpy(cmd, c);
-	int num_cmds = tokenise(cmd, "|", cmds, 1);
+void processCommand(char *c) {
+	char str[CMD_MAX_LEN], *cmds[MAX_CMDS];
+	strcpy(str, c);
+	int num_cmds = tokenise(str, "|", cmds, 1);
 
 	DBG_checkCmds(num_cmds, cmds);
 
@@ -204,7 +217,45 @@ void processCommand(char* c) {
 
 		DBG_checkArgs(argc, args);
 
-		commandHandler(argc, args, pipes[i], pipes[i+1]);
+		commandExec(argc, args, pipes[i], pipes[i+1]);
+	}
+}
+
+void statementsParser(char *c) {
+	int last = strlen(c) - 1;
+	int isBackground = 0;
+	if (c[last] == '&' && c[last - 1] != '&') {
+		c[last] = '\0';
+		
+		++process_count;
+		int pid = fork();
+		if (pid < 0)
+			printf("Couldn't create background process\n");
+		else if (pid == 0) {
+			printf("[%d] %d\n", process_count, getpid());
+			fflush(stdout);
+
+			statementsParser(c);
+
+			printf("[%d] Done			%s\n", process_count, c);
+			fflush(stdout);
+			exit(0);
+		}
+		else {
+			signal(SIGCHLD, SIG_IGN);
+			fflush(stdout);
+			return;
+		}
+	}
+	else {
+		char str[CMD_MAX_LEN], *statements[MAX_STATEMENTS];
+		strcpy(str, c);
+		int num_statements = tokenise(str, ";", statements, 1);
+
+		DBG_checkStatements(num_statements, statements);
+
+		for (int i = 0; i < num_statements; ++i)
+			processCommand(statements[i]);
 	}
 }
 
@@ -293,7 +344,7 @@ void myShell() {
 		printf(RESET);
 		fflush(stdout);
 
-		processCommand(cmd);
+		statementsParser(cmd);
 
 		free(cmd);
 	}
@@ -306,7 +357,7 @@ int main(int argc, char const *argv[]) {
 	return 0;
 }
 
-// main -> myShell --(init)-> readCommand --(promptString, addToHistory)-> processCommand --(tokenise)-> commandHandler
+// main -> myShell --(init)-> readCommand --(promptString, addToHistory)-> processCommand --(tokenise)-> commandExec
 
 
 

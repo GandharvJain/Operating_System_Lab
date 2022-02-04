@@ -5,10 +5,10 @@
 - [ ] Signal Handling
 - [X] Command history / Last Command
 - [X] Pipes
-- [ ] Background process using '&' character at end
+- [X] Background process using '&' character at end
 - [ ] Redirection operators '<' and '>' using dup2()
 - [ ] Multiline input using '\' character at end
-- [ ] Multiple commands using ';', '&&' and '||' characters
+- [+] Multiple commands using ';', '&&' and '||' characters
 - [x] Add support for arrow keys
 - [x] Tab completion?
 - [X] Add Colors
