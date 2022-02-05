@@ -6,7 +6,7 @@
 - [X] Command history / Last Command
 - [X] Pipes
 - [X] Background process using '&' character at end
-- [ ] Redirection operators '<' and '>' using dup2()
+- [X] Redirection operators '<' and '>' using ~~dup2()~~ freopen()
 - [ ] Multiline input using '\' character at end
 - [ ] Multiple commands using ';', '&&' and '||' characters
 - [x] Add support for arrow keys

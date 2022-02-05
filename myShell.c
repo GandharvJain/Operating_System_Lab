@@ -32,10 +32,6 @@
 **********************************************************************************/
 #define BRIGHT  "\x1b[1m"
 
-FILE *hist_file;
-int use_readline = 0;
-char last_cmd[CMD_MAX_LEN];
-
 /**********************************************************************************
 *********************************Error Checking************************************
 **********************************************************************************/
@@ -63,6 +59,11 @@ void DBG_checkPipe(int e) {
 void DBG_checkMalloc(char *e) {
 	if (DEBUG_LEVEL > 1 && e == NULL) {
 		printf("Error %d (%s) allocating memory\n", errno, strerror(errno));
+	}
+}
+void DBG_checkFreopen(FILE *e, char *filename) {
+	if (DEBUG_LEVEL > 1 && e == NULL) {
+		printf("Error %d (%s) reopening file %s\n", errno, strerror(errno), filename);
 	}
 }
 void DBG_checkArgs(int argc, char **args) {
@@ -95,6 +96,10 @@ void DBG_checkStatements(int num_statements, char **statements) {
 *********************************myShell functions*********************************
 **********************************************************************************/
 
+FILE *hist_file;
+int use_readline = 0;
+char last_cmd[CMD_MAX_LEN];
+
 void closeShell() {
 	if (hist_file)
 		fclose(hist_file);
@@ -119,11 +124,43 @@ char* promptString(){
 	return str;
 }
 
+void handleRedirect(int argc, char **args, int i) {
+	char *mode = "r";
+	FILE *stream = stdout;
+
+	for (; i < argc; ++i) {
+		if (strcmp(args[i], "<") == 0)
+			stream = stdin;
+		else if (strcmp(args[i], ">>") == 0)
+			mode = "a";
+		else if (strcmp(args[i], ">") == 0)
+			mode = "w";
+		else
+			continue;
+
+		break;
+	}
+
+	if (i >= argc)
+		return;
+
+	args[i++] = NULL;
+	char *filename = args[i];
+	args[i++] = NULL;
+
+	DBG_checkFreopen(freopen(filename, mode, stream), filename);
+
+	handleRedirect(argc, args, i);
+}
+
 int commandExec(int argc, char **args, int* p_in, int* p_out) {
+
+	//Check for built in command---------------------------------------------------------------------------------------
+
 	int pid = fork();
-	if (pid < 0)
+	if (pid < 0)			//Error
 		printf("Couldn't fork\n");
-	else if (pid > 0) {
+	else if (pid > 0) {		//Parent process
 		if (p_in[0] != -1)
 			DBG_checkClose(close(p_in[0]), " input", "r", "parent", args[0]);
 		if (p_in[1] != -1)
@@ -131,20 +168,22 @@ int commandExec(int argc, char **args, int* p_in, int* p_out) {
 
 		DBG_checkWait(wait(0));
 	}
-	else {
+	else {					//Child process
 		if (p_in[1] != -1)
 			DBG_checkClose(close(p_in[1]), " input", "w", " child", args[0]);
+		if (p_out[0] != -1)
+			DBG_checkClose(close(p_out[0]), "output", "r", " child", args[0]);
+
 		if (p_in[0] != -1) {
 			DBG_checkDup(dup2(p_in[0], STDIN_FILENO), "r-in", "stdin", args[0]);
 			DBG_checkClose(close(p_in[0]), " input", "r", " child", args[0]);
 		}
-
-		if (p_out[0] != -1)
-			DBG_checkClose(close(p_out[0]), "output", "r", " child", args[0]);
 		if (p_out[1] != -1) {
 			DBG_checkDup(dup2(p_out[1], STDOUT_FILENO), "w-out", "stdout", args[0]);
 			DBG_checkClose(close(p_out[1]), "output", "w", " child", args[0]);
 		}
+
+		handleRedirect(argc, args, 0);
 
 		if (execvp(args[0], args)) {
 			printf("Couldn't execute %s\n", args[0]);
@@ -153,7 +192,7 @@ int commandExec(int argc, char **args, int* p_in, int* p_out) {
 	}
 }
 
-int tokenise(char* cmd, char* delim, char **args, int ignoreQuotes) {
+int tokenise(char* cmd, char* delim, char **args, int quotesToArg) {
 	int i = 0, n = strlen(delim), m = strlen(cmd);
 	int foundDelim = 1;
 
@@ -165,12 +204,12 @@ int tokenise(char* cmd, char* delim, char **args, int ignoreQuotes) {
 		    foundDelim = 1;
 		}
 
-		if (cmd[j] == '\"' || cmd[j] == '\'') {
+		if (j < m && strchr("\"\'", cmd[j])) {
 			int s = j++;
 			while (cmd[j] != cmd[s] && j < m) ++j;
 			int e = j++;
 
-			if (!ignoreQuotes) {
+			if (quotesToArg) {
 				cmd[s] = '\0';
 				args[i++] = cmd + s + 1;
 				cmd[e] = '\0';
@@ -203,7 +242,9 @@ void initPipes(int n, int pipes[][2]) {
 void processCommand(char *c) {
 	char str[CMD_MAX_LEN], *cmds[MAX_CMDS];
 	strcpy(str, c);
-	int num_cmds = tokenise(str, "|", cmds, 1);
+
+	// Match continous or single only?---------------------------------------------------------------------------------
+	int num_cmds = tokenise(str, "|", cmds, 0);
 
 	DBG_checkCmds(num_cmds, cmds);
 
@@ -212,9 +253,11 @@ void processCommand(char *c) {
 
 	for (int i = 0; i < num_cmds; ++i) {
 		char *args[MAX_ARGS];
-		int argc = tokenise(cmds[i], " ", args, 0);
+		int argc = tokenise(cmds[i], " ", args, 1);
 
 		DBG_checkArgs(argc, args);
+
+		// Check return value for '&&' and '||' operators--------------------------------------------------------------
 
 		commandExec(argc, args, pipes[i], pipes[i+1]);
 	}
@@ -247,7 +290,7 @@ void statementsParser(char *c) {
 	else {
 		char str[CMD_MAX_LEN], *statements[MAX_STATEMENTS];
 		strcpy(str, c);
-		int num_statements = tokenise(str, ";", statements, 1);
+		int num_statements = tokenise(str, ";", statements, 0);
 
 		DBG_checkStatements(num_statements, statements);
 
@@ -354,8 +397,8 @@ int main(int argc, char const *argv[]) {
 	return 0;
 }
 
-// main -> myShell --(init)-> readCommand --(promptString, addToHistory)-> processCommand --(tokenise)-> commandExec
-
+// main -> myShell --(init)-> readCommand --(promptString, addToHistory)-> statementsParser -> 
+// processCommand --(initPipes, tokenise)-> commandExec --(handleRedirect)-> 
 
 
 		// printf("Your command: \'%s\' of length %ld\n", cmd, strlen(cmd));
