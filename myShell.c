@@ -69,7 +69,7 @@ void DBG_checkFreopen(FILE *e, char *filename) {
 void DBG_checkArgs(int argc, char **args) {
 	if (DEBUG_LEVEL) {
 		printf("Arguments (%d):\n", argc);
-		for (int i = 0; i < MAX_ARGS && args[i]; ++i) {
+		for (int i = 0; i < argc; ++i) {
 		     printf("(%s)\n", args[i]);
 		}
 		printf("-----\n");
@@ -85,7 +85,7 @@ void DBG_checkCmds(int num_cmds, char **cmds) {
 void DBG_checkStatements(int num_statements, char **statements) {
 	if (DEBUG_LEVEL) {
 		printf("Statements (%d):\n", num_statements);
-		for (int i = 0; i < MAX_STATEMENTS && statements[i]; ++i) {
+		for (int i = 0; i < num_statements; ++i) {
 		     printf("(%s)\n", statements[i]);
 		}
 		printf("-----------------\n");
@@ -117,7 +117,7 @@ char* promptString(){
 		memmove(&cwd[1], &cwd[strlen(home)], strlen(cwd) - strlen(home) + 1);
 		cwd[0] = '~';
 	}
-	char* str = (char*)malloc(7*8 + LOGIN_NAME_MAX + HOST_NAME_MAX + PWD_MAX_LEN + 5);
+	char* str = malloc(7*8 + LOGIN_NAME_MAX + HOST_NAME_MAX + PWD_MAX_LEN + 5);
 	DBG_checkMalloc(str);
 
 	sprintf(str, BRIGHT RED "%s@%s" RESET ":" BRIGHT CYAN "%s\n" BRIGHT YELLOW "$ ", user, host, cwd);
@@ -356,6 +356,39 @@ char* readCommand(){
 	return cmd;
 }
 
+char* operatorSpacer(char *cmd) {
+	char *delims[] = {">>", ">", "<"/*, "&&", "||"*/};
+	int n = sizeof(delims) / sizeof(delims[0]), m = strlen(cmd);
+
+	char *new_cmd = malloc(2 * strlen(cmd));
+	DBG_checkMalloc(new_cmd);
+
+	for (int i = 0, j = 0; i <= m;) {
+		for (int k = 0; k < n; ++k) {
+			char *d = delims[k];
+			int d_len = strlen(d);
+
+			if (strncmp(cmd + i, d, d_len) == 0 && i < m) {
+				if (cmd[i - 1] != ' ')
+					new_cmd[j++] = ' ';
+
+				new_cmd[j] = '\0';
+
+				strcat(new_cmd, d);
+				j += d_len;
+				i += d_len;
+
+				if (cmd[i] != ' ')
+					new_cmd[j++] = ' ';
+
+				break;
+			}
+		}
+		new_cmd[j++] = cmd[i++];
+	}
+	return new_cmd;
+}
+
 void init() {
 	printf("\n-------Welcome to myShell-------\n"
 		"Project created by Gandharv Jain\n");
@@ -378,15 +411,18 @@ void myShell() {
 	while (running) {
 		char* cmd = readCommand();
 
-		if (strlen(cmd) == 0)
+		if (strlen(cmd) == 0) {
+			free(cmd);
 			continue;
+		}
 
 		printf(RESET);
 		fflush(stdout);
 
-		statementsParser(cmd);
-
+		char* spaced_cmd = operatorSpacer(cmd);
 		free(cmd);
+
+		statementsParser(spaced_cmd);
 	}
 }
 
