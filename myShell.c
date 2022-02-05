@@ -34,7 +34,6 @@
 
 FILE *hist_file;
 int use_readline = 0;
-int process_count = 0;
 char last_cmd[CMD_MAX_LEN];
 
 /**********************************************************************************
@@ -43,27 +42,27 @@ char last_cmd[CMD_MAX_LEN];
 
 void DBG_checkClose(int e, char *str, char *mode, char *prntOrChld, char *cmd) {
 	if (DEBUG_LEVEL > 1 && e) {
-		printf("Error %d closing %s end of %s pipe in %s for process %s\n", errno, mode, str, prntOrChld, cmd);
+		printf("Error %d (%s) closing %s end of %s pipe in %s for process %s\n", errno, strerror(errno), mode, str, prntOrChld, cmd);
 	}
 }
 void DBG_checkDup(int e, char *Old, char *New, char *cmd) {
 	if (DEBUG_LEVEL > 1 && e) {
-		printf("Error %d duplicating %s fd to %s fd in process %s\n", errno, Old, New, cmd);
+		printf("Error %d (%s) duplicating %s fd to %s fd in process %s\n", errno, strerror(errno), Old, New, cmd);
 	}
 }
 void DBG_checkWait(int e) {
 	if (DEBUG_LEVEL > 1 && e < 0) {
-		printf("Error %d returned by wait\n", errno);
+		printf("Error %d (%s) returned by wait\n", errno, strerror(errno));
 	}
 }
 void DBG_checkPipe(int e) {
 	if (DEBUG_LEVEL > 1 && e) {
-		printf("Error %d creating pipe\n", errno);
+		printf("Error %d (%s) creating pipe\n", errno, strerror(errno));
 	}
 }
 void DBG_checkMalloc(char *e) {
 	if (DEBUG_LEVEL > 1 && e == NULL) {
-		printf("Error %d allocating memory\n", errno);
+		printf("Error %d (%s) allocating memory\n", errno, strerror(errno));
 	}
 }
 void DBG_checkArgs(int argc, char **args) {
@@ -227,18 +226,16 @@ void statementsParser(char *c) {
 	if (c[last] == '&' && c[last - 1] != '&') {
 		c[last] = '\0';
 		
-		++process_count;
 		int pid = fork();
 		if (pid < 0)
 			printf("Couldn't create background process\n");
 		else if (pid == 0) {
-			printf("[%d] %d\n", process_count, getpid());
+			printf("[%d] Started in background: %s\n", getpid(), c);
 			fflush(stdout);
 
 			statementsParser(c);
 
-			printf("[%d] Done			%s\n", process_count, c);
-			fflush(stdout);
+			printf("[%d] Done					%s\n", getpid(), c);
 			exit(0);
 		}
 		else {
