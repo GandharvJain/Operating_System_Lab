@@ -2,7 +2,7 @@
 - [X] User input with username, hostname and pwd
 - [X] Parser
 - [X] Command execution using fork() and exec()
-- [ ] Signal Handling
+- [X] Signal Handling
 - [X] Command history / Last Command
 - [X] Pipes
 - [X] Background process using '&' character at end

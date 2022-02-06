@@ -9,6 +9,7 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #include <errno.h>
+#include <setjmp.h>
 
 #define CMD_MAX_LEN 1024
 #define PWD_MAX_LEN 1024
@@ -97,6 +98,9 @@ void DBG_checkStatements(int num_statements, char **statements) {
 /**********************************************************************************
 ********************************Function Prototypes********************************
 **********************************************************************************/
+void addProcess(int);
+void killProcess(int);
+void killAll(int);
 
 void updateLast();
 void help(char*);
@@ -107,10 +111,10 @@ void closeShell(int);
 char* promptString();
 void handleRedirect(int, char**, int);
 int builtInCmdExec(int, char**);
-void commandExec(int, char**, int*, int*);
+int commandExec(int, char**, int*, int*);
 int tokenise(char*, char*, char**, int);
 void initPipes(int, int[][2]);
-void pipesParser(char*);
+void pipesParser(char*, int);
 void statementsParser(char*);
 void addToHistory(char*);
 char* readCommand();
@@ -125,6 +129,69 @@ void myShell();
 FILE *hist_file;
 int use_readline = 0;
 char last_cmd[CMD_MAX_LEN] = "";
+int killInterrupt = 0;
+sigjmp_buf ctrlc_buf;
+
+/**********************************************************************************
+************************************Job Control************************************
+**********************************************************************************/
+
+typedef struct process {
+	struct process *next;
+	pid_t pid;
+} process;
+
+process *head = NULL;
+
+void addProcess(int process_id) {
+	if (process_id <= 0)
+		return;
+	process *p = malloc(sizeof(process));
+	p->pid = process_id;
+	p->next = head;
+	head = p;
+}
+
+void killProcess(int process_id) {
+	if (head == NULL) {
+		siglongjmp(ctrlc_buf, 1);
+		return;
+	}
+	process *prev = head;
+	if (process_id > 0) {
+		kill(process_id, SIGKILL);
+
+		if (head->pid == process_id) {
+			head = prev->next;
+			free(prev);
+			return;
+		}
+		for (process *curr = head->next; curr; curr = curr->next, prev = prev->next) {
+			if (curr->pid == process_id) {
+				prev->next = curr->next;
+				free(curr);
+				return;
+			}
+		}
+	}
+	else {
+		process *curr = head;
+		while (curr != NULL) {
+			kill(curr->pid, SIGKILL);
+			prev = curr;
+			curr = curr->next;
+			free(prev);
+		}
+		head = NULL;
+	}
+}
+
+void killAll(int sig) {
+	killInterrupt = 1;
+	signal(SIGCHLD, SIG_IGN);
+	printf("\n");
+	killProcess(-1);
+}
 
 /**********************************************************************************
 *********************************Built-in Commands*********************************
@@ -318,21 +385,22 @@ int builtInCmdExec(int argc, char **args) {
 	return 1;
 }
 
-void commandExec(int argc, char **args, int* p_in, int* p_out) {
+int commandExec(int argc, char **args, int* p_in, int* p_out) {
 
 	if (builtInCmdExec(argc, args))
-		return;
+		return -1;
 
 	int pid = fork();
-	if (pid < 0)			//Error
+	if (pid < 0) {			//Error
 		printf("Couldn't fork\n");
+		return -1;
+	}
 	else if (pid > 0) {		//Parent process
 		if (p_in[0] != -1)
 			DBG_checkClose(close(p_in[0]), " input", "r", "parent", args[0]);
 		if (p_in[1] != -1)
 			DBG_checkClose(close(p_in[1]), " input", "w", "parent", args[0]);
-
-		DBG_checkWait(waitpid(pid, 0, 0));
+		return pid;
 	}
 	else {					//Child process
 		if (p_in[1] != -1)
@@ -406,7 +474,7 @@ void initPipes(int n, int pipes[][2]) {
 	pipes[n][0] = pipes[n][1] = -1;
 }
 
-void pipesParser(char *c) {
+void pipesParser(char *c, int isBackground) {
 	char str[CMD_MAX_LEN], *cmds[MAX_CMDS];
 	strcpy(str, c);
 
@@ -417,46 +485,44 @@ void pipesParser(char *c) {
 	int pipes[num_cmds + 1][2];
 	initPipes(num_cmds, pipes);
 
-	for (int i = 0; i < num_cmds; ++i) {
+	for (int i = 0; i < num_cmds && !killInterrupt; ++i) {
 		char *args[MAX_ARGS];
 
 		int argc = tokenise(cmds[i], " ", args, 1);
 		DBG_checkArgs(argc, args);
 
 		// Check return value for '&&' and '||' operators--------------------------------------------------------------
-		commandExec(argc, args, pipes[i], pipes[i+1]);
+		int piped_pid = commandExec(argc, args, pipes[i], pipes[i+1]);
+		addProcess(piped_pid);
 	}
+	if (isBackground)
+		signal(SIGCHLD, SIG_IGN);
+	else
+		for (process *p = head; p && !killInterrupt; p = p->next)
+			waitpid(p->pid, 0, 0);
 }
 
 void statementsParser(char *c) {
 	int last = strlen(c) - 1;
+	int isBackground = 0;
 	if (c[last] == '&' && c[last - 1] != '&') {
 		c[last] = '\0';
-
-		int pid = fork();
-		if (pid < 0)
-			printf("Couldn't create background process\n");
-		else if (pid == 0) {
-			statementsParser(c);
-
-			printf("[%d] Done					%s\n", getpid(), c);
-			exit(0);
-		}
-		else {
-			printf("[%d] Started in background: %s\n", pid, c);
-			signal(SIGCHLD, SIG_IGN);
-			return;
-		}
+		if (isspace(c[last - 1]))
+			c[last - 1] = '\0';
+		isBackground = 1;
 	}
-	else {
-		char str[CMD_MAX_LEN], *statements[MAX_STATEMENTS];
-		strcpy(str, c);
-		int num_statements = tokenise(str, ";", statements, 0);
 
-		DBG_checkStatements(num_statements, statements);
+	char str[CMD_MAX_LEN], *statements[MAX_STATEMENTS];
+	strcpy(str, c);
 
-		for (int i = 0; i < num_statements; ++i)
-			pipesParser(statements[i]);
+	int num_statements = tokenise(str, ";", statements, 0);
+	DBG_checkStatements(num_statements, statements);
+
+	for (int i = 0; i < num_statements; ++i) {
+		if (i == num_statements - 1)
+			pipesParser(statements[i], isBackground);
+		else
+			pipesParser(statements[i], 0);
 	}
 }
 
@@ -601,6 +667,11 @@ void myShell() {
 	init();
 
 	while (running) {
+		while (sigsetjmp(ctrlc_buf, 1) != 0);
+
+		signal(SIGINT, killAll);
+		killInterrupt = 0;
+
 		char* cmd = readCommand();
 
 		if (strlen(cmd) == 0) {
