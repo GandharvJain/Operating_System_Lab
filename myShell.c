@@ -110,7 +110,7 @@ int builtInCmdExec(int, char**);
 void commandExec(int, char**, int*, int*);
 int tokenise(char*, char*, char**, int);
 void initPipes(int, int[][2]);
-void processCommand(char*);
+void pipesParser(char*);
 void statementsParser(char*);
 void addToHistory(char*);
 char* readCommand();
@@ -222,9 +222,9 @@ void printHistory() {
 **********************************************************************************/
 
 void closeShell(int n) {
+	printf("\nExiting..\n");
 	if (hist_file)
 		fclose(hist_file);
-	printf("\nExiting..\n");
 	exit(n);
 }
 
@@ -359,7 +359,7 @@ void commandExec(int argc, char **args, int* p_in, int* p_out) {
 	}
 }
 
-int tokenise(char* cmd, char* delim, char **args, int quotesToArg) {
+int tokenise(char* cmd, char* delim, char **args, int tokeniseQuotes) {
 	int i = 0, n = strlen(delim), m = strlen(cmd);
 	int foundDelim = 1;
 
@@ -376,7 +376,7 @@ int tokenise(char* cmd, char* delim, char **args, int quotesToArg) {
 			while (cmd[j] != cmd[s] && j < m) ++j;
 			int e = j++;
 
-			if (quotesToArg) {
+			if (tokeniseQuotes) {
 				cmd[s] = '\0';
 				args[i++] = cmd + s + 1;
 				cmd[e] = '\0';
@@ -406,13 +406,12 @@ void initPipes(int n, int pipes[][2]) {
 	pipes[n][0] = pipes[n][1] = -1;
 }
 
-void processCommand(char *c) {
+void pipesParser(char *c) {
 	char str[CMD_MAX_LEN], *cmds[MAX_CMDS];
 	strcpy(str, c);
 
 	// Match continous or single only?---------------------------------------------------------------------------------
 	int num_cmds = tokenise(str, "|", cmds, 0);
-
 	DBG_checkCmds(num_cmds, cmds);
 
 	int pipes[num_cmds + 1][2];
@@ -420,12 +419,11 @@ void processCommand(char *c) {
 
 	for (int i = 0; i < num_cmds; ++i) {
 		char *args[MAX_ARGS];
-		int argc = tokenise(cmds[i], " ", args, 1);
 
+		int argc = tokenise(cmds[i], " ", args, 1);
 		DBG_checkArgs(argc, args);
 
 		// Check return value for '&&' and '||' operators--------------------------------------------------------------
-
 		commandExec(argc, args, pipes[i], pipes[i+1]);
 	}
 }
@@ -435,22 +433,19 @@ void statementsParser(char *c) {
 	int isBackground = 0;
 	if (c[last] == '&' && c[last - 1] != '&') {
 		c[last] = '\0';
-		
+
 		int pid = fork();
 		if (pid < 0)
 			printf("Couldn't create background process\n");
 		else if (pid == 0) {
-			printf("[%d] Started in background: %s\n", getpid(), c);
-			fflush(stdout);
-
 			statementsParser(c);
 
 			printf("[%d] Done					%s\n", getpid(), c);
 			exit(0);
 		}
 		else {
+			printf("[%d] Started in background: %s\n", pid, c);
 			signal(SIGCHLD, SIG_IGN);
-			fflush(stdout);
 			return;
 		}
 	}
@@ -462,7 +457,7 @@ void statementsParser(char *c) {
 		DBG_checkStatements(num_statements, statements);
 
 		for (int i = 0; i < num_statements; ++i)
-			processCommand(statements[i]);
+			pipesParser(statements[i]);
 	}
 }
 
@@ -487,9 +482,13 @@ char* preprocessCmd(char *cmd) {
 	char *new_cmd = malloc(2 * strlen(cmd) + CMD_MAX_LEN);
 	DBG_checkMalloc(new_cmd);
 
-	for (int i = 0, j = 0; i <= m;) {
+	int i = 0, j = 0;
 
-		if (i < m && strchr("\"\'", cmd[i])) {			//Skipping quotes
+	while (isspace(cmd[i])) ++i;	//Trim leading spaces
+
+	while (i < m) {
+
+		if (i < m && strchr("\"\'", cmd[i])) {	//Skipping quotes
 			char c = cmd[i];
 			do {
 				new_cmd[j++] = cmd[i++];
@@ -505,7 +504,7 @@ char* preprocessCmd(char *cmd) {
 			j += strlen(last_cmd);
 		}
 
-		for (int k = 0; k < n; ++k) {					//Inserting spaces between operators
+		for (int k = 0; k < n; ++k) {	//Inserting spaces between operators
 			char *d = delims[k];
 			int d_len = strlen(d);
 
@@ -520,13 +519,20 @@ char* preprocessCmd(char *cmd) {
 				i += d_len;
 
 				if (cmd[i] != ' ')
-					new_cmd[j++] = ' ';
+					new_cmd[j] = ' ';
 
 				break;
 			}
 		}
+		while (isspace(cmd[i]) && isspace(cmd[i + 1])) ++i;	//Truncate multiple spaces
+
 		new_cmd[j++] = cmd[i++];
 	}
+
+	while (isspace(new_cmd[j - 1])) --j;	//Trim trailing spaces
+
+	new_cmd[j] = '\0';
+
 	if (insertedLast)
 		printf("%s\n", new_cmd);
 
@@ -619,7 +625,7 @@ int main(int argc, char const *argv[]) {
 }
 
 // main -> myShell --(init)-> readCommand --(promptString, preprocessCmd, addToHistory) -> statementsParser -> 
-// processCommand --(initPipes, tokenise)-> commandExec -> builtInCmdExec 
+// pipesParser --(initPipes, tokenise)-> commandExec -> builtInCmdExec 
 // --(closeShell, execLast, help, printHistory, source)-> handleRedirect
 
 
