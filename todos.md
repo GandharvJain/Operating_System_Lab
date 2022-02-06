@@ -14,4 +14,4 @@
 - [X] Add Colors
 - [X] Replace 'strtok' with custom function to deal with quotations
 - [X] Add Debugging options
-- [ ] Add built-in commands
+- [X] Add built-in commands

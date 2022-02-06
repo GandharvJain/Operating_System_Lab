@@ -17,7 +17,7 @@
 #define MAX_STATEMENTS ((int) CMD_MAX_LEN/2)
 
 #define SAVE_EMPTY_CMD 0	//0 for saving empty commands disabled
-#define DEBUG_LEVEL 2		//0 for none, 1 for minimal, 2 for full
+#define DEBUG_LEVEL 0		//-1 for none, 0 for some, 1 for some more, 2 for full
 
 #define RED     "\x1b[31m"
 #define GREEN   "\x1b[32m"
@@ -27,6 +27,7 @@
 #define CYAN    "\x1b[36m"
 #define WHITE   "\x1b[37m"
 #define RESET   "\x1b[0m"
+
 /**********************************************************************************
 *********************************Error Checking************************************
 **********************************************************************************/
@@ -36,6 +37,11 @@
 *********************************Error Checking************************************
 **********************************************************************************/
 
+void DBG_checkChdir(int e) {
+	if (DEBUG_LEVEL > -1 && e < 0) {
+		printf("Error changing directory: %s\n", strerror(errno));
+	}
+}
 void DBG_checkClose(int e, char *str, char *mode, char *prntOrChld, char *cmd) {
 	if (DEBUG_LEVEL > 1 && e) {
 		printf("Error %d (%s) closing %s end of %s pipe in %s for process %s\n", errno, strerror(errno), mode, str, prntOrChld, cmd);
@@ -93,18 +99,137 @@ void DBG_checkStatements(int num_statements, char **statements) {
 }
 
 /**********************************************************************************
-*********************************myShell functions*********************************
+********************************Function Prototypes********************************
 **********************************************************************************/
+
+void updateLast();
+void help(char*);
+void source(char*);
+void printHistory();
+
+void closeShell(int);
+char* promptString();
+void handleRedirect(int, char**, int);
+int builtInCmdExec(int, char**);
+void commandExec(int, char**, int*, int*);
+int tokenise(char*, char*, char**, int);
+void initPipes(int, int[][2]);
+void processCommand(char*);
+void statementsParser(char*);
+void addToHistory(char*);
+char* readCommand();
+char* preprocessCmd(char*);
+void init();
+void myShell();
+
+/*********************************************************************************
+*********************************Global variables*********************************
+*********************************************************************************/
 
 FILE *hist_file;
 int use_readline = 0;
-char last_cmd[CMD_MAX_LEN];
+char last_cmd[CMD_MAX_LEN] = "";
 
-void closeShell() {
+/**********************************************************************************
+*********************************Built-in Commands*********************************
+**********************************************************************************/
+
+void updateLast() {
+	FILE *hist = fopen(".myShell_history", "r");
+	while (!feof(hist))
+		fgets(last_cmd, CMD_MAX_LEN, hist);
+	last_cmd[strlen(last_cmd) - 1] = '\0';
+}
+
+void help(char *cmd) {
+	if (cmd == NULL) {
+		printf(	"\nThese shell commands are defined internally.  Type 'help' to see this list.\n"
+				"Type 'help name' to find out more about the function 'name'.\n"
+				"Use 'man -k' or 'info' to find out more about commands not in this list.\n"
+				"[Note: myShell replaces '!!' with the last command executed]\n\n"
+				"\tcd [dir]\n\texit [n]\n\t!!\n\thelp [command]\n\thistory\n\t. filename\n\tsource filename\n\n");
+	}
+	else if (strcmp(cmd, "cd") == 0) {
+		printf(	"cd: cd [dir]\n"
+				"\tChange the shell working directory.\n\n"
+				"\tChange the current directory to DIR.  The default DIR is the value of the\n"
+				"\tHOME shell variable.\n\n");
+	}
+	else if (strcmp(cmd, "exit") == 0) {
+		printf(	"exit: exit [n]\n"
+			    "\tExit the shell.\n\n"
+				"\tExits the shell with a status of N.  If N is omitted, the exit status is 0.\n\n");
+	}
+	else if (strcmp(cmd, "help") == 0) {
+		printf(	"help: help [command]\n"
+			    "\tDisplay information about builtin commands.\n\n"
+				"\tDisplays brief summaries of builtin commands. If COMMAND isspecified,\n"
+				"\tgives detailed help on command otherwise the list of help topics is printed.\n\n");
+	}
+	else if (strcmp(cmd, "history") == 0) {
+		printf(	"history: history\n"
+			    "\tDisplay the history list.\n\n"
+				"\tDisplay the history list with line numbers.\n\n");
+	}
+	else if (strcmp(cmd, ".") == 0) {
+		printf(	".: . filename\n"
+			    "\tExecute commands from a file in the current shell.\n\n"
+				"\tRead and execute commands from FILENAME in the current shell.\n"
+				"\tFILENAME requires relative path or absolute path\n\n");
+	}
+	else if (strcmp(cmd, "source") == 0) {
+		printf(	"source: source filename\n"
+			    "\tExecute commands from a file in the current shell.\n\n"
+				"\tRead and execute commands from FILENAME in the current shell.\n"
+				"\tFILENAME requires relative path or absolute path\n\n");
+	}
+	else {
+		printf("No such built-in command: '%s'\n\n", cmd);
+	}
+}
+
+void source(char *filename) {
+	FILE *fd;
+	int line_num = 1;
+	if( !(fd = fopen(filename, "r")) )
+		printf("Couldn't source file %s\n", filename);
+	else {
+		char *cmd = malloc(CMD_MAX_LEN);
+		DBG_checkMalloc(cmd);
+
+		while(fgets(cmd, CMD_MAX_LEN, fd)) {
+			size_t len = strlen(cmd);
+			if (cmd[len - 1] == '\n')
+				cmd[len - 1] = '\0';
+			else {
+				printf("Command too long, execution stopped\n");
+				return;
+			}
+
+			statementsParser(preprocessCmd(cmd));
+		}
+	}
+}
+
+void printHistory() {
+	char line[CMD_MAX_LEN] = "";
+	int i = 1;
+	rewind(hist_file);
+	while (fgets(line, CMD_MAX_LEN, hist_file) != NULL) {
+	    printf("\t%d\t%s", i, line);
+	    ++i;
+	}
+}
+
+/**********************************************************************************
+*********************************myShell functions*********************************
+**********************************************************************************/
+
+void closeShell(int n) {
 	if (hist_file)
 		fclose(hist_file);
 	printf("\nExiting..\n");
-	exit(0);
+	exit(n);
 }
 
 char* promptString(){
@@ -153,9 +278,54 @@ void handleRedirect(int argc, char **args, int i) {
 	handleRedirect(argc, args, i);
 }
 
-int commandExec(int argc, char **args, int* p_in, int* p_out) {
+int builtInCmdExec(int argc, char **args) {
+	char *builtInList[] = {"cd", "exit", "help", "history", ".", "source"};
+	int i = 0, found = -1;
+	while (i < 6) {
+	    if (strcmp(args[0], builtInList[i]) == 0) {
+	    	found = i;
+	    	break;
+	    }
+	    ++i;
+	}
 
-	//Check for built in command---------------------------------------------------------------------------------------
+	switch (found) {
+		case 0: {
+			char *dir = getenv("HOME");
+			if (args[1])
+				dir = args[1];
+			DBG_checkChdir(chdir(dir));
+			break;
+		}
+		case 1: {
+			int n = 0;
+			if (args[1])
+				n = atoi(args[1]);
+			closeShell(n);
+			break;
+		}
+		case 2: {
+			help(args[1]);
+			break;
+		}
+		case 3: {
+			printHistory();
+		}
+		case 4:
+		case 5: {
+			source(args[1]);
+			break;
+		}
+		default:
+			return 0;
+	}
+	return 1;
+}
+
+void commandExec(int argc, char **args, int* p_in, int* p_out) {
+
+	if (builtInCmdExec(argc, args))
+		return;
 
 	int pid = fork();
 	if (pid < 0)			//Error
@@ -186,7 +356,8 @@ int commandExec(int argc, char **args, int* p_in, int* p_out) {
 		handleRedirect(argc, args, 0);
 
 		if (execvp(args[0], args)) {
-			printf("Couldn't execute %s\n", args[0]);
+			if (DEBUG_LEVEL > -1)
+				printf("Couldn't execute %s\n", args[0]);
 			exit(1);
 		}
 	}
@@ -308,63 +479,37 @@ void addToHistory(char* command) {
 		// fprintf(hist_file, "#%ld\n%s\n", time(0), command);
 		fprintf(hist_file, "%s\n", command);
 		fflush(hist_file);
-		strcpy(last_cmd, command);
 	}
+	strcpy(last_cmd, command);
 }
 
-char* readCommand(){
-	char *prompt = promptString(), *c;
-	if (use_readline) {
-		c = readline(prompt);
-		free(prompt);
-
-		if (c == NULL)
-			closeShell();
-
-		if (strlen(c) >= CMD_MAX_LEN) {
-			printf("Argument list too long, input discarded\n");
-			c = "";
-		}
-	}
-	else {
-		printf("%s", prompt);
-		free(prompt);
-
-		c = (char*)malloc(CMD_MAX_LEN);
-		DBG_checkMalloc(c);
-
-		if (fgets(c, CMD_MAX_LEN, stdin) == NULL)
-			closeShell();
-
-		size_t len = strlen(c);
-		if (c[len - 1] == '\n')
-			c[len - 1] = '\0';
-		else {
-			while ((getchar()) != '\n');
-			printf("Argument list too long, input dicarded\n");
-			c[0] = '\0';
-		}
-	}
-	if (strlen(c) || SAVE_EMPTY_CMD)
-		addToHistory(c);
-
-	char *cmd = malloc(strlen(c)+1);
-	DBG_checkMalloc(cmd);
-
-	strcpy(cmd, c);
-	free(c);
-	return cmd;
-}
-
-char* operatorSpacer(char *cmd) {
+char* preprocessCmd(char *cmd) {
 	char *delims[] = {">>", ">", "<"/*, "&&", "||"*/};
 	int n = sizeof(delims) / sizeof(delims[0]), m = strlen(cmd);
+	int insertedLast = 0;
 
-	char *new_cmd = malloc(2 * strlen(cmd));
+	char *new_cmd = malloc(2 * strlen(cmd) + CMD_MAX_LEN);
 	DBG_checkMalloc(new_cmd);
 
 	for (int i = 0, j = 0; i <= m;) {
-		for (int k = 0; k < n; ++k) {
+
+		if (i < m && strchr("\"\'", cmd[i])) {			//Skipping quotes
+			char c = cmd[i];
+			do {
+				new_cmd[j++] = cmd[i++];
+			} while (cmd[i] != c && i < m);
+		}
+
+		if (strncmp(cmd + i, "!!", 2) == 0 && i < m) {	//Replacing !! with last command
+			insertedLast = 1;
+			updateLast();
+			new_cmd[j] = '\0';
+			strcat(new_cmd, last_cmd);
+			i += 2;
+			j += strlen(last_cmd);
+		}
+
+		for (int k = 0; k < n; ++k) {					//Inserting spaces between operators
 			char *d = delims[k];
 			int d_len = strlen(d);
 
@@ -386,7 +531,53 @@ char* operatorSpacer(char *cmd) {
 		}
 		new_cmd[j++] = cmd[i++];
 	}
+	if (insertedLast)
+		printf("%s\n", new_cmd);
+
 	return new_cmd;
+}
+
+char* readCommand(){
+	char *prompt = promptString(), *c;
+	if (use_readline) {
+		c = readline(prompt);
+		free(prompt);
+
+		if (c == NULL)
+			closeShell(0);
+
+		if (strlen(c) >= CMD_MAX_LEN) {
+			printf("Argument list too long, input discarded\n");
+			c = "";
+		}
+	}
+	else {
+		printf("%s", prompt);
+		free(prompt);
+
+		c = (char*)malloc(CMD_MAX_LEN);
+		DBG_checkMalloc(c);
+
+		if (fgets(c, CMD_MAX_LEN, stdin) == NULL)
+			closeShell(0);
+
+		size_t len = strlen(c);
+		if (c[len - 1] == '\n')
+			c[len - 1] = '\0';
+		else {
+			while ((getchar()) != '\n');
+			printf("Argument list too long, input dicarded\n");
+			c[0] = '\0';
+		}
+	}
+	char *cmd = preprocessCmd(c);
+
+	if (strlen(cmd) || SAVE_EMPTY_CMD)
+		addToHistory(cmd);
+
+	free(c);
+
+	return cmd;
 }
 
 void init() {
@@ -419,10 +610,8 @@ void myShell() {
 		printf(RESET);
 		fflush(stdout);
 
-		char* spaced_cmd = operatorSpacer(cmd);
+		statementsParser(cmd);
 		free(cmd);
-
-		statementsParser(spaced_cmd);
 	}
 }
 
@@ -433,8 +622,9 @@ int main(int argc, char const *argv[]) {
 	return 0;
 }
 
-// main -> myShell --(init)-> readCommand --(promptString, addToHistory)-> statementsParser -> 
-// processCommand --(initPipes, tokenise)-> commandExec --(handleRedirect)-> 
+// main -> myShell --(init)-> readCommand --(promptString, preprocessCmd, addToHistory) -> statementsParser -> 
+// processCommand --(initPipes, tokenise)-> commandExec -> builtInCmdExec 
+// --(closeShell, execLast, help, printHistory, source)-> handleRedirect
 
 
 		// printf("Your command: \'%s\' of length %ld\n", cmd, strlen(cmd));
