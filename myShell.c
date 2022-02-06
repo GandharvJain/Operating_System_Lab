@@ -332,7 +332,7 @@ void commandExec(int argc, char **args, int* p_in, int* p_out) {
 		if (p_in[1] != -1)
 			DBG_checkClose(close(p_in[1]), " input", "w", "parent", args[0]);
 
-		DBG_checkWait(wait(0));
+		DBG_checkWait(waitpid(pid, 0, 0));
 	}
 	else {					//Child process
 		if (p_in[1] != -1)
@@ -430,7 +430,6 @@ void pipesParser(char *c) {
 
 void statementsParser(char *c) {
 	int last = strlen(c) - 1;
-	int isBackground = 0;
 	if (c[last] == '&' && c[last - 1] != '&') {
 		c[last] = '\0';
 
