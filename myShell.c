@@ -98,9 +98,9 @@ void DBG_checkStatements(int num_statements, char **statements) {
 /**********************************************************************************
 ********************************Function Prototypes********************************
 **********************************************************************************/
-void addProcess(int);
-void killProcess(int);
-void killAll(int);
+void addProcess(int, int);
+void killProcess(int, int);
+void reset(int);
 
 void updateLast();
 void help(char*);
@@ -129,7 +129,6 @@ void myShell();
 FILE *hist_file;
 int use_readline = 0;
 char last_cmd[CMD_MAX_LEN] = "";
-int killInterrupt = 0;
 sigjmp_buf ctrlc_buf;
 
 /**********************************************************************************
@@ -138,23 +137,24 @@ sigjmp_buf ctrlc_buf;
 
 typedef struct process {
 	struct process *next;
-	pid_t pid;
+	int pid;
+	int isBg;
 } process;
 
 process *head = NULL;
 
-void addProcess(int process_id) {
+void addProcess(int process_id, int isBackground) {
 	if (process_id <= 0)
 		return;
 	process *p = malloc(sizeof(process));
 	p->pid = process_id;
+	p->isBg = isBackground;
 	p->next = head;
 	head = p;
 }
 
-void killProcess(int process_id) {
+void killProcess(int process_id, int killBg) {
 	if (head == NULL) {
-		siglongjmp(ctrlc_buf, 1);
 		return;
 	}
 	process *prev = head;
@@ -162,12 +162,16 @@ void killProcess(int process_id) {
 		kill(process_id, SIGKILL);
 
 		if (head->pid == process_id) {
+			if (head->isBg && !killBg)
+				return;
 			head = prev->next;
 			free(prev);
 			return;
 		}
 		for (process *curr = head->next; curr; curr = curr->next, prev = prev->next) {
 			if (curr->pid == process_id) {
+				if (curr->isBg && !killBg)
+					return;
 				prev->next = curr->next;
 				free(curr);
 				return;
@@ -177,6 +181,10 @@ void killProcess(int process_id) {
 	else {
 		process *curr = head;
 		while (curr != NULL) {
+			if (curr->isBg && !killBg) {
+				curr = curr->next;
+				continue;
+			}
 			kill(curr->pid, SIGKILL);
 			prev = curr;
 			curr = curr->next;
@@ -186,11 +194,15 @@ void killProcess(int process_id) {
 	}
 }
 
-void killAll(int sig) {
-	killInterrupt = 1;
-	signal(SIGCHLD, SIG_IGN);
+/**********************************************************************************
+**********************************Signal Handling**********************************
+**********************************************************************************/
+
+void reset(int sig) {
 	printf("\n");
-	killProcess(-1);
+	fflush(stdout);
+	killProcess(-1, 0);
+	siglongjmp(ctrlc_buf, 1);
 }
 
 /**********************************************************************************
@@ -210,7 +222,7 @@ void help(char *cmd) {
 				"Type 'help name' to find out more about the function 'name'.\n"
 				"Use 'man -k' or 'info' to find out more about commands not in this list.\n"
 				"[Note: myShell replaces '!!' with the last command executed]\n\n"
-				"\tcd [dir]\n\texit [n]\n\t!!\n\thelp [command]\n\thistory\n\t. filename\n\tsource filename\n\n");
+				"\tcd [dir]\n\texit [n]\n\thelp [command]\n\thistory\n\t. filename\n\tsource filename\n\n");
 	}
 	else if (strcmp(cmd, "cd") == 0) {
 		printf(	"cd: cd [dir]\n"
@@ -292,6 +304,7 @@ void closeShell(int n) {
 	printf("\nExiting..\n");
 	if (hist_file)
 		fclose(hist_file);
+	killProcess(-1, 1);
 	exit(n);
 }
 
@@ -485,20 +498,25 @@ void pipesParser(char *c, int isBackground) {
 	int pipes[num_cmds + 1][2];
 	initPipes(num_cmds, pipes);
 
-	for (int i = 0; i < num_cmds && !killInterrupt; ++i) {
+	for (int i = 0; i < num_cmds; ++i) {
 		char *args[MAX_ARGS];
-
 		int argc = tokenise(cmds[i], " ", args, 1);
 		DBG_checkArgs(argc, args);
 
 		// Check return value for '&&' and '||' operators--------------------------------------------------------------
+		if (isBackground)
+			signal(SIGINT, SIG_IGN);
+		else
+			signal(SIGINT, SIG_DFL);
+
 		int piped_pid = commandExec(argc, args, pipes[i], pipes[i+1]);
-		addProcess(piped_pid);
+
+		signal(SIGINT, reset);
+
+		addProcess(piped_pid, isBackground);
 	}
-	if (isBackground)
-		signal(SIGCHLD, SIG_IGN);
-	else
-		for (process *p = head; p && !killInterrupt; p = p->next)
+	if (!isBackground)
+		for (process *p = head; p; p = p->next)
 			waitpid(p->pid, 0, 0);
 }
 
@@ -669,8 +687,8 @@ void myShell() {
 	while (running) {
 		while (sigsetjmp(ctrlc_buf, 1) != 0);
 
-		signal(SIGINT, killAll);
-		killInterrupt = 0;
+		signal(SIGCHLD, SIG_IGN);
+		signal(SIGINT, reset);
 
 		char* cmd = readCommand();
 
