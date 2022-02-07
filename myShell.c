@@ -99,7 +99,8 @@ void DBG_checkStatements(int num_statements, char **statements) {
 ********************************Function Prototypes********************************
 **********************************************************************************/
 void addProcess(int, int);
-void killProcess(int, int);
+void killProcess(int);
+void addJob(char*, int, int);
 void reset(int);
 
 void updateLast();
@@ -138,59 +139,126 @@ sigjmp_buf ctrlc_buf;
 typedef struct process {
 	struct process *next;
 	int pid;
-	int isBg;
+	int pgid;
 } process;
+process *p_first = NULL;
 
-process *head = NULL;
-
-void addProcess(int process_id, int isBackground) {
+void addProcess(int process_id, int pgrp_id) {
 	if (process_id <= 0)
 		return;
+	setpgid(process_id, pgrp_id);
+
 	process *p = malloc(sizeof(process));
 	p->pid = process_id;
-	p->isBg = isBackground;
-	p->next = head;
-	head = p;
+	p->pgid = pgrp_id;
+	p->next = p_first;
+	p_first = p;
 }
 
-void killProcess(int process_id, int killBg) {
-	if (head == NULL) {
+void killProcess(int pgrp_id) {
+	if (p_first == NULL)
 		return;
-	}
-	process *prev = head;
-	if (process_id > 0) {
-		kill(process_id, SIGKILL);
 
-		if (head->pid == process_id) {
-			if (head->isBg && !killBg)
-				return;
-			head = prev->next;
+	process *prev = p_first;
+	if (pgrp_id > 0) {					//Kill all processes mathcing pgrp_id
+		killpg(pgrp_id, SIGKILL);
+
+		if (p_first->pgid == pgrp_id) {
+			p_first = prev->next;
 			free(prev);
 			return;
 		}
-		for (process *curr = head->next; curr; curr = curr->next, prev = prev->next) {
-			if (curr->pid == process_id) {
-				if (curr->isBg && !killBg)
-					return;
+		for (process *curr = p_first->next; curr; curr = curr->next, prev = prev->next) {
+			if (curr->pgid == pgrp_id) {
 				prev->next = curr->next;
 				free(curr);
 				return;
 			}
 		}
 	}
-	else {
-		process *curr = head;
+	else {								//Kill all processes
+		process *curr = p_first;
 		while (curr != NULL) {
-			if (curr->isBg && !killBg) {
-				curr = curr->next;
-				continue;
-			}
 			kill(curr->pid, SIGKILL);
 			prev = curr;
 			curr = curr->next;
 			free(prev);
 		}
-		head = NULL;
+		p_first = NULL;
+	}
+}
+
+typedef struct job {
+	struct job *next;
+	char cmd[CMD_MAX_LEN];
+	int pgid;
+	int id;
+	int isBg;
+} job;
+job *job_first = NULL;
+
+void addJob(char *command, int pgrp_id, int isBackground) {
+	job *j = malloc(sizeof(job));
+	int jid = 1;
+	if (job_first)
+		jid = job_first->id + 1;
+
+	strcpy(j->cmd, command);
+	j->pgid = pgrp_id;
+	j->id = jid;
+	j->isBg = isBackground;
+
+	j->next = job_first;
+	job_first = j;
+}
+
+void killJob(int job_id) {
+	if (job_first == NULL)
+		return;
+
+	job *prev = job_first;
+	if (job_id > 0) {							//Kill processes matching job_id
+		if (job_first->id == job_id) {
+			killProcess(job_first->pgid);
+			job_first = prev->next;
+			free(prev);
+			return;
+		}
+		for (job *curr = job_first->next; curr; curr = curr->next, prev = prev->next) {
+			if (curr->id == job_id) {
+				killProcess(curr->pgid);
+				prev->next = curr->next;
+				free(curr);
+				return;
+			}
+		}
+		printf("No such job\n");
+	}
+	else if (job_id == 0) {						//Kill foreground process
+		if (job_first->isBg == 0) {
+			killProcess(job_first->pgid);
+			job_first = prev->next;
+			free(prev);
+			return;
+		}
+		for (job *curr = job_first->next; curr; curr = curr->next, prev = prev->next) {
+			if (curr->isBg == 0) {
+				killProcess(curr->pgid);
+				prev->next = curr->next;
+				free(curr);
+				return;
+			}
+		}
+	}
+	else {										//Kill all jobs
+		killProcess(-1);
+		job *curr = job_first;
+		while (curr != NULL) {
+			prev = curr;
+			curr = curr->next;
+			free(prev);
+		}
+		job_first = NULL;
 	}
 }
 
@@ -201,7 +269,7 @@ void killProcess(int process_id, int killBg) {
 void reset(int sig) {
 	printf("\n");
 	fflush(stdout);
-	killProcess(-1, 0);
+	killJob(0);
 	siglongjmp(ctrlc_buf, 1);
 }
 
@@ -304,7 +372,7 @@ void closeShell(int n) {
 	printf("\nExiting..\n");
 	if (hist_file)
 		fclose(hist_file);
-	killProcess(-1, 1);
+	killJob(-1);
 	exit(n);
 }
 
@@ -497,6 +565,7 @@ void pipesParser(char *c, int isBackground) {
 
 	int pipes[num_cmds + 1][2];
 	initPipes(num_cmds, pipes);
+	int pgrpId;
 
 	for (int i = 0; i < num_cmds; ++i) {
 		char *args[MAX_ARGS];
@@ -504,19 +573,27 @@ void pipesParser(char *c, int isBackground) {
 		DBG_checkArgs(argc, args);
 
 		// Check return value for '&&' and '||' operators--------------------------------------------------------------
-		if (isBackground)
+		signal(SIGCHLD, SIG_DFL);
+		if (isBackground) 
 			signal(SIGINT, SIG_IGN);
 		else
 			signal(SIGINT, SIG_DFL);
 
 		int piped_pid = commandExec(argc, args, pipes[i], pipes[i+1]);
 
+		signal(SIGCHLD, SIG_IGN);
 		signal(SIGINT, reset);
 
-		addProcess(piped_pid, isBackground);
+		if (i == 0) {
+			pgrpId = piped_pid;
+			addJob(c, pgrpId, isBackground);
+		}
+
+		addProcess(piped_pid, pgrpId);
 	}
+
 	if (!isBackground)
-		for (process *p = head; p; p = p->next)
+		for (process *p = p_first; p; p = p->next)
 			waitpid(p->pid, 0, 0);
 }
 
