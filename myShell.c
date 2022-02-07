@@ -100,7 +100,14 @@ void DBG_checkStatements(int num_statements, char **statements) {
 **********************************************************************************/
 void addProcess(int, int);
 void killProcess(int);
+void updateProcesses();
+void printProcesses();
+
 void addJob(char*, int, int);
+void killJob(int);
+void updateJobs();
+void printJobs();
+
 void reset(int);
 
 void updateLast();
@@ -188,6 +195,35 @@ void killProcess(int pgrp_id) {
 	}
 }
 
+void printProcesses(process *curr) {
+	if (curr != NULL) {
+		printJobs(curr->next);
+		printf("Pid: %d\tPgid: %d\n", curr->pid, curr->pgid);
+	}
+}
+
+void updateProcesses() {
+	process *prev = p_first, *curr = p_first;
+	while (curr && kill(curr->pid, 0) < 0) {
+		p_first = curr->next;
+		free(curr);
+		curr = p_first;
+	}
+	while (curr) {
+	    while (curr && kill(curr->pid, 0) >= 0) {
+	    	prev = curr;
+	    	curr = curr->next;
+	    }
+
+	    if (curr == NULL)
+	    	return;
+
+	    prev->next = curr->next;
+	    free(curr);
+	    curr = prev->next;
+	}
+}
+
 typedef struct job {
 	struct job *next;
 	char cmd[CMD_MAX_LEN];
@@ -198,6 +234,8 @@ typedef struct job {
 job *job_first = NULL;
 
 void addJob(char *command, int pgrp_id, int isBackground) {
+	if (pgrp_id <= 0)
+		return;
 	job *j = malloc(sizeof(job));
 	int jid = 1;
 	if (job_first)
@@ -262,14 +300,47 @@ void killJob(int job_id) {
 	}
 }
 
+void updateJobs() {
+	int pid;
+	while ((pid = waitpid(-1, 0, WNOHANG)) > 0);
+	updateProcesses();
+
+	job *prev = job_first, *curr = job_first;
+	while (curr && killpg(curr->pgid, 0) < 0) {
+		job_first = curr->next;
+		free(curr);
+		curr = job_first;
+	}
+	while (curr) {
+	    while (curr && killpg(curr->pgid, 0) >= 0) {
+	    	prev = curr;
+	    	curr = curr->next;
+	    }
+
+	    if (curr == NULL)
+	    	return;
+
+	    prev->next = curr->next;
+	    free(curr);
+	    curr = prev->next;
+	}
+}
+
+void printJobs(job *curr) {
+	if (curr != NULL) {
+		printJobs(curr->next);
+		printf("[%d]  Running\tisBg:%d\tpgid:%d\tcmd:%s\n", curr->id, curr->isBg, curr->pgid, curr->cmd);
+	}
+}
+
 /**********************************************************************************
 **********************************Signal Handling**********************************
 **********************************************************************************/
 
 void reset(int sig) {
+	killJob(0);
 	printf("\n");
 	fflush(stdout);
-	killJob(0);
 	siglongjmp(ctrlc_buf, 1);
 }
 
@@ -290,7 +361,7 @@ void help(char *cmd) {
 				"Type 'help name' to find out more about the function 'name'.\n"
 				"Use 'man -k' or 'info' to find out more about commands not in this list.\n"
 				"[Note: myShell replaces '!!' with the last command executed]\n\n"
-				"\tcd [dir]\n\texit [n]\n\thelp [command]\n\thistory\n\t. filename\n\tsource filename\n\n");
+				"\tcd [dir]\n\texit [n]\n\thelp [command]\n\thistory\n\t. filename\n\tsource filename\n\tjobs\n\n");
 	}
 	else if (strcmp(cmd, "cd") == 0) {
 		printf(	"cd: cd [dir]\n"
@@ -325,6 +396,11 @@ void help(char *cmd) {
 			    "\tExecute commands from a file in the current shell.\n\n"
 				"\tRead and execute commands from FILENAME in the current shell.\n"
 				"\tFILENAME requires relative path or absolute path\n\n");
+	}
+	else if (strcmp(cmd, "jobs") == 0) {
+		printf(	"jobs: jobs\n"
+			    "\tDisplay status of jobs.\n\n"
+				"\tLists the active jobs.\n\n");
 	}
 	else {
 		printf("No such built-in command: '%s'\n\n", cmd);
@@ -423,9 +499,9 @@ void handleRedirect(int argc, char **args, int i) {
 }
 
 int builtInCmdExec(int argc, char **args) {
-	char *builtInList[] = {"cd", "exit", "help", "history", ".", "source"};
+	char *builtInList[] = {"cd", "exit", "help", "history", ".", "source", "jobs"};
 	int i = 0, found = -1;
-	while (i < 6) {
+	while (i < 7) {
 	    if (strcmp(args[0], builtInList[i]) == 0) {
 	    	found = i;
 	    	break;
@@ -454,10 +530,15 @@ int builtInCmdExec(int argc, char **args) {
 		}
 		case 3: {
 			printHistory();
+			break;
 		}
 		case 4:
 		case 5: {
 			source(args[1]);
+			break;
+		}
+		case 6: {
+			printJobs(job_first);
 			break;
 		}
 		default:
@@ -574,14 +655,11 @@ void pipesParser(char *c, int isBackground) {
 
 		// Check return value for '&&' and '||' operators--------------------------------------------------------------
 		signal(SIGCHLD, SIG_DFL);
-		if (isBackground) 
-			signal(SIGINT, SIG_IGN);
-		else
-			signal(SIGINT, SIG_DFL);
+		signal(SIGINT, SIG_DFL);
 
 		int piped_pid = commandExec(argc, args, pipes[i], pipes[i+1]);
 
-		signal(SIGCHLD, SIG_IGN);
+		signal(SIGCHLD, updateJobs);
 		signal(SIGINT, reset);
 
 		if (i == 0) {
@@ -592,9 +670,14 @@ void pipesParser(char *c, int isBackground) {
 		addProcess(piped_pid, pgrpId);
 	}
 
-	if (!isBackground)
+	if (!isBackground) {
+		signal(SIGTTOU, SIG_IGN);
+		tcsetpgrp(STDIN_FILENO, pgrpId);
+
 		for (process *p = p_first; p; p = p->next)
-			waitpid(p->pid, 0, 0);
+			if (p->pgid == pgrpId)
+				waitpid(p->pid, 0, 0);
+	}
 }
 
 void statementsParser(char *c) {
@@ -763,8 +846,8 @@ void myShell() {
 
 	while (running) {
 		while (sigsetjmp(ctrlc_buf, 1) != 0);
-
-		signal(SIGCHLD, SIG_IGN);
+		tcsetpgrp(STDIN_FILENO, getpgid(0));
+		signal(SIGCHLD, updateJobs);
 		signal(SIGINT, reset);
 
 		char* cmd = readCommand();
