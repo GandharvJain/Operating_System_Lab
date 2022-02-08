@@ -1,3 +1,9 @@
+// Compile using:
+// gcc myShell.c -lreadline -o myShell.o
+// Run using:
+// ./myShell.o 0 to use fgets and,
+// ./myShell.o 1 to use readline
+
 #include <stdio.h>
 #include <unistd.h>
 #include <limits.h>
@@ -18,7 +24,7 @@
 #define MAX_STATEMENTS ((int) CMD_MAX_LEN/2)
 
 #define SAVE_EMPTY_CMD 0	//0 for saving empty commands disabled
-#define DEBUG_LEVEL 0		//-1 for none, 0 for some, 1 for some more, 2 for full
+#define DEBUG_LEVEL 2		//-1 for none, 0 for some, 1 for some more, 2 for full
 
 #define RED     "\x1b[31m"
 #define GREEN   "\x1b[32m"
@@ -834,10 +840,10 @@ void init() {
 		printf("(Without using readline library)\n\n");
 	fflush(stdout);
 
+	if (!( hist_file = fopen(".myShell_history", "a+") ))
+		printf("Warning! Could not load \".myShell_history\", histroy will not be saved!\n");
 	if (use_readline)
 		read_history_range(".myShell_history", 0, -1);
-	else  if (!( hist_file = fopen(".myShell_history", "a") ))
-		printf("Warning! Could not load \".myShell_history\", histroy will not be saved!\n");
 }
 
 void myShell() {

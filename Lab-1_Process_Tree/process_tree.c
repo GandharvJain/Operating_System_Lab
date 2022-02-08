@@ -1,3 +1,6 @@
+// "gcc process_tree.c -o process_tree.o; ./process_tree.o && sleep 2" to compile and run
+// "pstree -phsTa $$" to get ancestors
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -55,5 +58,3 @@ int main(int argc, char const *argv[]) {
 	printPID();
 	return 0;
 }
-// "gcc process_tree.c -o process_tree.o; ./process_tree.o && sleep 2" to compile and run
-// "pstree -phsTa $$" to get ancestors

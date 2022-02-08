@@ -1,4 +1,4 @@
-process_tree.o
-myShell.o
-.myShell_history
-time.o
+Lab-1_Process_Tree/process_tree.o
+Lab-1_Process_Tree/time.o
+Lab-2_Custom_Shell/myShell.o
+Lab-2_Custom_Shell/.myShell_history
