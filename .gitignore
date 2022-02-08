@@ -2,3 +2,4 @@ Lab-1_Process_Tree/process_tree.o
 Lab-1_Process_Tree/time.o
 Lab-2_Custom_Shell/myShell.o
 Lab-2_Custom_Shell/.myShell_history
+Lab-1_Process_Tree/pid_manager.o
