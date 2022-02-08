@@ -1,3 +1,9 @@
+// Programming practice 3.19 in Operating Systems Concepts Silberschatz
+// Compile using:
+// gcc time.c -lrt -o time.o
+// Run using:
+// ./time.o [command]
+
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/time.h>
