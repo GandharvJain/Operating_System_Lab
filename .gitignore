@@ -1,6 +1,6 @@
-Lab-1_Process_Tree/process_tree.o
-Lab-1_Process_Tree/time.o
-Lab-2_Custom_Shell/myShell.o
-Lab-2_Custom_Shell/.myShell_history
-Lab-1_Process_Tree/pid_manager.o
-Lab-3_Custom_System_Call/userspace.o
+Exp-1_Process_Tree/process_tree.o
+Exp-1_Process_Tree/time_shm.o
+Exp-2_Custom_Shell/myShell.o
+Exp-2_Custom_Shell/.myShell_history
+Exp-1_Process_Tree/pid_manager.o
+Exp-3_Custom_System_Call/userspace.o
