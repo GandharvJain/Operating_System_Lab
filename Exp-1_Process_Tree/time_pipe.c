@@ -1,22 +1,18 @@
 /*
 Programming practice 3.19 in Operating Systems Concepts Silberschatz
-Using Shared Memory Objects
+Using Pipes
 Compile using:
-gcc time_shm.c -lrt -o time_shm.o
-"-lrt" flag for shm_open() and shm_unlink()
+gcc time_pipe.c -o time_pipe.o
 Run using:
-./time_shm.o [command]
+./time_pipe.o [command]
 */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 #include <sys/time.h>
 #include <sys/wait.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <string.h>
 
 int main(int argc, char const *argv[]) {
 	if (argc < 2) {
@@ -31,25 +27,35 @@ int main(int argc, char const *argv[]) {
 	args[argc - 1] = NULL;
 
 	int SIZE = sizeof(struct timeval);
-	const char *name = "timeCMD";
-	struct timeval *start, *end = malloc(SIZE);
+	struct timeval *start = malloc(SIZE);
+	struct timeval *end = malloc(SIZE);
 
-	int fd = shm_open(name, O_CREAT | O_RDWR, 0666);
-	ftruncate(fd, SIZE);
-	start = (struct timeval*) mmap(0, SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	int fd[2];
+	pipe(fd);
 
 	int pid = fork();
 	if (pid < 0) {
 		printf("Could not fork\n");
 	}
 	else if (pid == 0) {
+		close(fd[0]);
+
 		gettimeofday(start, 0);
+
+		write(fd[1], start, SIZE);
+		close(fd[1]);
+
 		execvp(argv[1], args);
 		printf("Couldn't execute %s\n", argv[1]);
 		exit(1);
 	}
 	else {
+		close(fd[1]);
+		read(fd[0], start, SIZE);
+		close(fd[0]);
+
 		wait(0);
+
 		gettimeofday(end, 0);
 
 		double secnds = end->tv_sec - start->tv_sec;
@@ -58,8 +64,7 @@ int main(int argc, char const *argv[]) {
 
 		printf("Time taken by '%s': %f s\n", argv[1], runtime);
 
-
-		shm_unlink(name);
+		free(start);
 		free(end);
 		for (int i = 0; i < argc - 1; ++i)
 			free(args[i]);

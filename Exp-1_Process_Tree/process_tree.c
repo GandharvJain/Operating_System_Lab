@@ -1,5 +1,11 @@
-// "gcc process_tree.c -o process_tree.o; ./process_tree.o && sleep 2" to compile and run
-// "pstree -phsTa $$" to get ancestors
+/*
+Compile using:
+gcc process_tree.c -o process_tree.o
+Run using:
+./process_tree.o
+To get ancestors in terminal:
+pstree -phsTa $$
+*/
 
 #include <stdio.h>
 #include <unistd.h>

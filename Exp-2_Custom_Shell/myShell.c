@@ -1,8 +1,10 @@
-// Compile using:
-// gcc myShell.c -lreadline -o myShell.o
-// Run using:
-// ./myShell.o 0 to use fgets and,
-// ./myShell.o 1 to use readline
+/*
+Compile using:
+gcc myShell.c -lreadline -o myShell.o
+Run using:
+./myShell.o [mode]
+Mode = 0: fgets, 1: readline
+*/
 
 #include <stdio.h>
 #include <unistd.h>

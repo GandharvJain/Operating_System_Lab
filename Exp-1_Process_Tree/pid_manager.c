@@ -1,8 +1,10 @@
-// Programming practice 3.20 in Operating Systems Concepts Silberschatz
-// Compile using:
-// gcc pid_manager.c -o pid_manager.o
-// Run using:
-// ./pid_manager.o
+/*
+Programming practice 3.20 in Operating Systems Concepts Silberschatz
+Compile using:
+gcc pid_manager.c -o pid_manager.o
+Run using:
+./pid_manager.o
+*/
 
 #include <stdio.h>
 #include <stdint.h>
