@@ -1,5 +1,5 @@
 /*
-Programming practice 3.20 in Operating Systems Concepts Silberschatz
+Programming practice 3.20 in Operating Systems Concepts Silberschatz (10th ed.)
 Compile using:
 gcc pid_manager.c -o pid_manager.o
 Run using:

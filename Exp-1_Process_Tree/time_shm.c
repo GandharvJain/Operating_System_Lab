@@ -1,5 +1,5 @@
 /*
-Programming practice 3.19 in Operating Systems Concepts Silberschatz
+Programming practice 3.19 in Operating Systems Concepts Silberschatz (10th ed.)
 Using Shared Memory Objects
 Compile using:
 gcc time_shm.c -lrt -o time_shm.o

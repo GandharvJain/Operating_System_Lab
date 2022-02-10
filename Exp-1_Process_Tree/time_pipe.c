@@ -1,5 +1,5 @@
 /*
-Programming practice 3.19 in Operating Systems Concepts Silberschatz
+Programming practice 3.19 in Operating Systems Concepts Silberschatz (10th ed.)
 Using Pipes
 Compile using:
 gcc time_pipe.c -o time_pipe.o
