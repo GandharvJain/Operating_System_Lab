@@ -106,6 +106,7 @@ void DBG_checkStatements(int num_statements, char **statements) {
 /**********************************************************************************
 ********************************Function Prototypes********************************
 **********************************************************************************/
+
 void addProcess(int, int);
 void killProcess(int);
 void updateProcesses();
@@ -133,8 +134,8 @@ void initPipes(int, int[][2]);
 void pipesParser(char*, int);
 void statementsParser(char*);
 void addToHistory(char*);
-char* readCommand();
 char* preprocessCmd(char*);
+char* readCommand();
 void init();
 void myShell();
 
@@ -203,13 +204,6 @@ void killProcess(int pgrp_id) {
 	}
 }
 
-void printProcesses(process *curr) {
-	if (curr != NULL) {
-		printJobs(curr->next);
-		printf("Pid: %d\tPgid: %d\n", curr->pid, curr->pgid);
-	}
-}
-
 void updateProcesses() {
 	process *prev = p_first, *curr = p_first;
 	while (curr && kill(curr->pid, 0) < 0) {
@@ -229,6 +223,13 @@ void updateProcesses() {
 	    prev->next = curr->next;
 	    free(curr);
 	    curr = prev->next;
+	}
+}
+
+void printProcesses(process *curr) {
+	if (curr != NULL) {
+		printJobs(curr->next);
+		printf("Pid: %d\tPgid: %d\n", curr->pid, curr->pgid);
 	}
 }
 
