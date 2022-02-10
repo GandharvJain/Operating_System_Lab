@@ -24,6 +24,7 @@ Mode = 0: fgets, 1: readline
 #define MAX_ARGS ((int) CMD_MAX_LEN/2)
 #define MAX_CMDS ((int) CMD_MAX_LEN/2)
 #define MAX_STATEMENTS ((int) CMD_MAX_LEN/2)
+#define HIST_FILE_NAME ".myShell_history"
 
 #define SAVE_EMPTY_CMD 0	//0 for saving empty commands disabled
 #define DEBUG_LEVEL 2		//-1 for none, 0 for some, 1 for some more, 2 for full
@@ -144,6 +145,7 @@ void myShell();
 *********************************************************************************/
 
 FILE *hist_file;
+char *hist_file_path = NULL;
 int use_readline = 0;
 char last_cmd[CMD_MAX_LEN] = "";
 sigjmp_buf ctrlc_buf;
@@ -358,7 +360,7 @@ void reset(int sig) {
 **********************************************************************************/
 
 void updateLast() {
-	FILE *hist = fopen(".myShell_history", "r");
+	FILE *hist = fopen(hist_file_path, "r");
 	while (!feof(hist))
 		fgets(last_cmd, CMD_MAX_LEN, hist);
 	last_cmd[strlen(last_cmd) - 1] = '\0';
@@ -457,6 +459,8 @@ void closeShell(int n) {
 	printf("\nExiting..\n");
 	if (hist_file)
 		fclose(hist_file);
+	if (hist_file_path)
+		free(hist_file_path);
 	killJob(-1);
 	exit(n);
 }
@@ -716,7 +720,7 @@ void statementsParser(char *c) {
 void addToHistory(char* command) {
 	if (use_readline){
 		add_history(command);
-		append_history(1, ".myShell_history");
+		append_history(1, hist_file_path);
 	}
 	else if (hist_file) {
 		// fprintf(hist_file, "#%ld\n%s\n", time(0), command);
@@ -843,10 +847,13 @@ void init() {
 		printf("(Without using readline library)\n\n");
 	fflush(stdout);
 
-	if (!( hist_file = fopen(".myShell_history", "a+") ))
-		printf("Warning! Could not load \".myShell_history\", histroy will not be saved!\n");
+	if (!( hist_file = fopen(HIST_FILE_NAME, "a+") ))
+		printf("Warning! Could not load \".myShell_history\", history will not be saved!\n");
+	else
+		 hist_file_path = realpath(HIST_FILE_NAME, NULL);
+
 	if (use_readline)
-		read_history_range(".myShell_history", 0, -1);
+		read_history_range(HIST_FILE_NAME, 0, -1);
 }
 
 void myShell() {
