@@ -27,7 +27,7 @@ Mode = 0: fgets, 1: readline
 #define HIST_FILE_NAME ".myShell_history"
 
 #define SAVE_EMPTY_CMD 0	//0 for saving empty commands disabled
-#define DEBUG_LEVEL 2		//-1 for none, 0 for some, 1 for some more, 2 for full
+#define DEBUG_LEVEL 0		//-1 for none, 0 for some, 1 for some more, 2 for full
 
 #define RED     "\x1b[31m"
 #define GREEN   "\x1b[32m"
@@ -605,6 +605,11 @@ int commandExec(int argc, char **args, int* p_in, int* p_out) {
 int tokenise(char* cmd, char* delim, char **args, int tokeniseQuotes) {
 	int i = 0, n = strlen(delim), m = strlen(cmd);
 	int foundDelim = 1;
+
+	if (!tokeniseQuotes) {
+		args[i++] = cmd;
+		foundDelim = 0;
+	}
 
 	for (int j = 0; j < m; ++j) {
 
