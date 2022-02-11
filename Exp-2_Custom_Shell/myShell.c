@@ -24,6 +24,7 @@ Mode = 0: fgets, 1: readline
 #define MAX_ARGS ((int) CMD_MAX_LEN/2)
 #define MAX_CMDS ((int) CMD_MAX_LEN/2)
 #define MAX_STATEMENTS ((int) CMD_MAX_LEN/2)
+#define MAX_PIPELINES ((int) CMD_MAX_LEN/3)
 #define HIST_FILE_NAME ".myShell_history"
 
 #define SAVE_EMPTY_CMD 0	//0 for saving empty commands disabled
@@ -44,63 +45,72 @@ Mode = 0: fgets, 1: readline
 **********************************************************************************/
 
 void DBG_checkChdir(int e) {
-	if (DEBUG_LEVEL > -1 && e < 0) {
-		printf("Error changing directory: %s\n", strerror(errno));
+	if (DEBUG_LEVEL > -1 && e == -1) {
+		fprintf(stderr, "Error changing directory: %s\n", strerror(errno));
 	}
 }
 void DBG_checkClose(int e, char *str, char *mode, char *prntOrChld, char *cmd) {
-	if (DEBUG_LEVEL > 1 && e) {
-		printf("Error %d (%s) closing %s end of %s pipe in %s for process %s\n", errno, strerror(errno), mode, str, prntOrChld, cmd);
+	if (DEBUG_LEVEL > 1 && e == -1) {
+		fprintf(stderr, "Error %d (%s) closing %s end of %s pipe in %s for process %s\n", errno, strerror(errno), mode, str, prntOrChld, cmd);
 	}
 }
 void DBG_checkDup(int e, char *Old, char *New, char *cmd) {
-	if (DEBUG_LEVEL > 1 && e) {
-		printf("Error %d (%s) duplicating %s fd to %s fd in process %s\n", errno, strerror(errno), Old, New, cmd);
+	if (DEBUG_LEVEL > 1 && e  == -1) {
+		fprintf(stderr, "Error %d (%s) duplicating %s fd to %s fd in process %s\n", errno, strerror(errno), Old, New, cmd);
 	}
 }
 void DBG_checkWait(int e) {
-	if (DEBUG_LEVEL > 1 && e < 0) {
-		printf("Error %d (%s) returned by wait\n", errno, strerror(errno));
+	if (DEBUG_LEVEL > 1 && e == -1) {
+		fprintf(stderr, "Error %d (%s) returned by wait\n", errno, strerror(errno));
 	}
 }
 void DBG_checkPipe(int e) {
-	if (DEBUG_LEVEL > 1 && e) {
-		printf("Error %d (%s) creating pipe\n", errno, strerror(errno));
+	if (DEBUG_LEVEL > 1 && e == -1) {
+		fprintf(stderr, "Error %d (%s) creating pipe\n", errno, strerror(errno));
 	}
 }
 void DBG_checkMalloc(char *e) {
 	if (DEBUG_LEVEL > 1 && e == NULL) {
-		printf("Error %d (%s) allocating memory\n", errno, strerror(errno));
+		fprintf(stderr, "Error %d (%s) allocating memory\n", errno, strerror(errno));
 	}
 }
 void DBG_checkFreopen(FILE *e, char *filename) {
 	if (DEBUG_LEVEL > 1 && e == NULL) {
-		printf("Error %d (%s) reopening file %s\n", errno, strerror(errno), filename);
+		fprintf(stderr, "Error %d (%s) reopening file %s\n", errno, strerror(errno), filename);
 	}
 }
 void DBG_checkArgs(int argc, char **args) {
 	if (DEBUG_LEVEL) {
-		printf("Arguments (%d):\n", argc);
+		fprintf(stderr, "Arguments (%d):\n", argc);
 		for (int i = 0; i < argc; ++i) {
-		     printf("(%s)\n", args[i]);
+		     fprintf(stderr, "(%s)\n", args[i]);
 		}
-		printf("-----\n");
+		fprintf(stderr, "-----\n");
 	}
 }
 void DBG_checkCmds(int num_cmds, char **cmds) {
 	if (DEBUG_LEVEL) {
-		printf("No. of Cmds = %d\n", num_cmds);
+		fprintf(stderr, "No. of Cmds = %d\n", num_cmds);
 		for (int i = 0; i < num_cmds; ++i)
-			printf("Cmd : (%s)\n", cmds[i]);
+			fprintf(stderr, "Cmd : (%s)\n", cmds[i]);
 	}
 }
 void DBG_checkStatements(int num_statements, char **statements) {
 	if (DEBUG_LEVEL) {
-		printf("Statements (%d):\n", num_statements);
+		fprintf(stderr, "Statements (%d):\n", num_statements);
 		for (int i = 0; i < num_statements; ++i) {
-		     printf("(%s)\n", statements[i]);
+		     fprintf(stderr, "(%s)\n", statements[i]);
 		}
-		printf("-----------------\n");
+		fprintf(stderr, "-----------------\n");
+	}
+}
+void DBG_checkPipelines(int num_pipelines, char **pipelines) {
+	if (DEBUG_LEVEL) {
+		fprintf(stderr, "Pipelines (%d):\n", num_pipelines);
+		for (int i = 0; i < num_pipelines; ++i) {
+		     fprintf(stderr, "(%s)\n", pipelines[i]);
+		}
+		fprintf(stderr, "-----------------\n");
 	}
 }
 
@@ -113,7 +123,7 @@ void killProcess(int);
 void updateProcesses();
 void printProcesses();
 
-void addJob(char*, int, int);
+void addJob(char*, int);
 void killJob(int);
 void updateJobs();
 void printJobs();
@@ -132,7 +142,8 @@ int builtInCmdExec(int, char**);
 int commandExec(int, char**, int*, int*);
 int tokenise(char*, char*, char**, int);
 void initPipes(int, int[][2]);
-void pipesParser(char*, int);
+int pipesParser(char*, int, int);
+void booleanParser(char*, int);
 void statementsParser(char*);
 void addToHistory(char*);
 char* preprocessCmd(char*);
@@ -229,9 +240,9 @@ void updateProcesses() {
 }
 
 void printProcesses(process *curr) {
-	if (curr != NULL) {
-		printJobs(curr->next);
+	while (curr != NULL) {
 		printf("Pid: %d\tPgid: %d\n", curr->pid, curr->pgid);
+		curr = curr->next;
 	}
 }
 
@@ -240,11 +251,10 @@ typedef struct job {
 	char cmd[CMD_MAX_LEN];
 	int pgid;
 	int id;
-	int isBg;
 } job;
 job *job_first = NULL;
 
-void addJob(char *command, int pgrp_id, int isBackground) {
+void addJob(char *command, int pgrp_id) {
 	if (pgrp_id <= 0)
 		return;
 	job *j = malloc(sizeof(job));
@@ -255,7 +265,6 @@ void addJob(char *command, int pgrp_id, int isBackground) {
 	strcpy(j->cmd, command);
 	j->pgid = pgrp_id;
 	j->id = jid;
-	j->isBg = isBackground;
 
 	j->next = job_first;
 	job_first = j;
@@ -281,23 +290,7 @@ void killJob(int job_id) {
 				return;
 			}
 		}
-		printf("No such job\n");
-	}
-	else if (job_id == 0) {						//Kill foreground process
-		if (job_first->isBg == 0) {
-			killProcess(job_first->pgid);
-			job_first = prev->next;
-			free(prev);
-			return;
-		}
-		for (job *curr = job_first->next; curr; curr = curr->next, prev = prev->next) {
-			if (curr->isBg == 0) {
-				killProcess(curr->pgid);
-				prev->next = curr->next;
-				free(curr);
-				return;
-			}
-		}
+		fprintf(stderr, "No such job\n");
 	}
 	else {										//Kill all jobs
 		killProcess(-1);
@@ -340,7 +333,7 @@ void updateJobs() {
 void printJobs(job *curr) {
 	if (curr != NULL) {
 		printJobs(curr->next);
-		printf("[%d]  Running\tisBg:%d\tpgid:%d\tcmd:%s\n", curr->id, curr->isBg, curr->pgid, curr->cmd);
+		printf("[%d]  Running\tpgid:%d\tcmd:%s\n", curr->id, curr->pgid, curr->cmd);
 	}
 }
 
@@ -349,8 +342,7 @@ void printJobs(job *curr) {
 **********************************************************************************/
 
 void reset(int sig) {
-	killJob(0);
-	printf("\n");
+	printf("Test\n");
 	fflush(stdout);
 	siglongjmp(ctrlc_buf, 1);
 }
@@ -414,7 +406,7 @@ void help(char *cmd) {
 				"\tLists the active jobs.\n\n");
 	}
 	else {
-		printf("No such built-in command: '%s'\n\n", cmd);
+		fprintf(stderr, "No such built-in command: '%s'\n\n", cmd);
 	}
 }
 
@@ -422,7 +414,7 @@ void source(char *filename) {
 	FILE *fd;
 	int line_num = 1;
 	if( !(fd = fopen(filename, "r")) )
-		printf("Couldn't source file %s\n", filename);
+		fprintf(stderr, "Couldn't source file %s\n", filename);
 	else {
 		char *cmd = malloc(CMD_MAX_LEN);
 		DBG_checkMalloc(cmd);
@@ -432,7 +424,7 @@ void source(char *filename) {
 			if (cmd[len - 1] == '\n')
 				cmd[len - 1] = '\0';
 			else {
-				printf("Command too long, execution stopped\n");
+				fprintf(stderr, "Command too long, execution stopped\n");
 				return;
 			}
 
@@ -552,6 +544,7 @@ int builtInCmdExec(int argc, char **args) {
 		}
 		case 6: {
 			printJobs(job_first);
+			printProcesses(p_first);
 			break;
 		}
 		default:
@@ -567,7 +560,7 @@ int commandExec(int argc, char **args, int* p_in, int* p_out) {
 
 	int pid = fork();
 	if (pid < 0) {			//Error
-		printf("Couldn't fork\n");
+		fprintf(stderr, "Couldn't fork\n");
 		return -1;
 	}
 	else if (pid > 0) {		//Parent process
@@ -599,7 +592,7 @@ int commandExec(int argc, char **args, int* p_in, int* p_out) {
 
 		if (execvp(args[0], args)) {
 			if (DEBUG_LEVEL > -1)
-				printf("Couldn't execute %s\n", args[0]);
+				fprintf(stderr, "Couldn't execute %s\n", args[0]);
 			exit(1);
 		}
 	}
@@ -657,7 +650,7 @@ void initPipes(int n, int pipes[][2]) {
 	pipes[n][0] = pipes[n][1] = -1;
 }
 
-void pipesParser(char *c, int isBackground) {
+int pipesParser(char *c, int isBackground, int pgrpId) {
 	char str[CMD_MAX_LEN], *cmds[MAX_CMDS];
 	strcpy(str, c);
 
@@ -667,7 +660,7 @@ void pipesParser(char *c, int isBackground) {
 	int pipes[num_cmds + 1][2];
 	initPipes(num_cmds, pipes);
 
-	int pgrpId = 0;
+	int last_pid;
 
 	for (int i = 0; i < num_cmds; ++i) {
 		char *args[MAX_ARGS];
@@ -678,19 +671,60 @@ void pipesParser(char *c, int isBackground) {
 
 		if (pgrpId == 0) {
 			pgrpId = piped_pid;
-			addJob(c, pgrpId, isBackground);
+			addJob(c, pgrpId);
 		}
+		if (i == num_cmds - 1)
+			last_pid = piped_pid;
 
 		addProcess(piped_pid, pgrpId);
 	}
 
-	if (!isBackground) {
-		signal(SIGTTOU, SIG_IGN);
+	if (!isBackground)
 		tcsetpgrp(STDIN_FILENO, pgrpId);
 
-		for (process *p = p_first; p; p = p->next)
-			if (p->pgid == pgrpId)
-				waitpid(p->pid, 0, 0);
+	int i = 0, exit_stat = -1;
+	while (i < num_cmds) {
+		int status;
+	    int exit_pid = wait(&status);
+	    if (exit_pid == last_pid && WIFEXITED(status))
+	    	exit_stat = WEXITSTATUS(status);
+	    ++i;
+	}
+
+	return exit_stat;
+}
+
+void booleanParser(char *c, int isBackground) {
+	int set_pgrpID = 0;
+	if (isBackground) {
+		int pid = fork();
+		if (pid < 0) {			//Error
+			fprintf(stderr, "Couldn't fork\n");
+			return;
+		}
+		else if (pid > 0) {		//Parent process
+			return;
+		}
+		signal(SIGCHLD, SIG_DFL);
+		setpgrp();
+		set_pgrpID = getpgrp();
+	}
+	else
+		signal(SIGTTOU, SIG_IGN);
+
+	char str[CMD_MAX_LEN], *pipelines[MAX_PIPELINES];
+	strcpy(str, c);
+
+	int num_pipelines = tokenise(str, "&&", pipelines, 0);
+	DBG_checkPipelines(num_pipelines, pipelines);
+
+	int exit_stat = 0;
+	for (int i = 0; i < num_pipelines && exit_stat == 0; ++i) {
+		exit_stat = pipesParser(pipelines[i], isBackground, set_pgrpID);
+	}
+	if (isBackground) {
+		tcsetpgrp(STDIN_FILENO, getpgid(getppid()));
+		exit(0);
 	}
 }
 
@@ -711,11 +745,10 @@ void statementsParser(char *c) {
 	DBG_checkStatements(num_statements, statements);
 
 	for (int i = 0; i < num_statements; ++i) {
-	// Handle && and || operators
 		if (i == num_statements - 1)
-			pipesParser(statements[i], isBackground);
+			booleanParser(statements[i], isBackground);
 		else
-			pipesParser(statements[i], 0);
+			booleanParser(statements[i], 0);
 	}
 }
 
@@ -865,8 +898,10 @@ void myShell() {
 	while (running) {
 		while (sigsetjmp(ctrlc_buf, 1) != 0);
 		tcsetpgrp(STDIN_FILENO, getpgid(0));
+
 		signal(SIGCHLD, updateJobs);
 		signal(SIGINT, reset);
+		updateJobs();
 
 		char* cmd = readCommand();
 
