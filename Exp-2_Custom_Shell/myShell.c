@@ -342,7 +342,7 @@ void printJobs(job *curr) {
 **********************************************************************************/
 
 void reset(int sig) {
-	printf("Test\n");
+	printf("\n");
 	fflush(stdout);
 	siglongjmp(ctrlc_buf, 1);
 }
