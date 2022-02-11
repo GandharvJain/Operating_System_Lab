@@ -578,6 +578,9 @@ int commandExec(int argc, char **args, int* p_in, int* p_out) {
 		return pid;
 	}
 	else {					//Child process
+		signal(SIGCHLD, SIG_DFL);
+		signal(SIGINT, SIG_DFL);
+
 		if (p_in[1] != -1)
 			DBG_checkClose(close(p_in[1]), " input", "w", " child", args[0]);
 		if (p_out[0] != -1)
@@ -658,29 +661,22 @@ void pipesParser(char *c, int isBackground) {
 	char str[CMD_MAX_LEN], *cmds[MAX_CMDS];
 	strcpy(str, c);
 
-	// Match continous or single only?---------------------------------------------------------------------------------
 	int num_cmds = tokenise(str, "|", cmds, 0);
 	DBG_checkCmds(num_cmds, cmds);
 
 	int pipes[num_cmds + 1][2];
 	initPipes(num_cmds, pipes);
-	int pgrpId;
+
+	int pgrpId = 0;
 
 	for (int i = 0; i < num_cmds; ++i) {
 		char *args[MAX_ARGS];
 		int argc = tokenise(cmds[i], " ", args, 1);
 		DBG_checkArgs(argc, args);
 
-		// Check return value for '&&' and '||' operators--------------------------------------------------------------
-		signal(SIGCHLD, SIG_DFL);
-		signal(SIGINT, SIG_DFL);
-
 		int piped_pid = commandExec(argc, args, pipes[i], pipes[i+1]);
 
-		signal(SIGCHLD, updateJobs);
-		signal(SIGINT, reset);
-
-		if (i == 0) {
+		if (pgrpId == 0) {
 			pgrpId = piped_pid;
 			addJob(c, pgrpId, isBackground);
 		}
@@ -715,6 +711,7 @@ void statementsParser(char *c) {
 	DBG_checkStatements(num_statements, statements);
 
 	for (int i = 0; i < num_statements; ++i) {
+	// Handle && and || operators
 		if (i == num_statements - 1)
 			pipesParser(statements[i], isBackground);
 		else
@@ -736,7 +733,7 @@ void addToHistory(char* command) {
 }
 
 char* preprocessCmd(char *cmd) {
-	char *delims[] = {">>", ">", "<"/*, "&&", "||"*/};
+	char *delims[] = {">>", ">", "<"};
 	int n = sizeof(delims) / sizeof(delims[0]), m = strlen(cmd);
 	int insertedLast = 0;
 
