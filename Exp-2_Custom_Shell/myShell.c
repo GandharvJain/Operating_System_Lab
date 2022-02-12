@@ -669,26 +669,25 @@ int pipesParser(char *c, int isBackground, int pgrpId) {
 
 		int piped_pid = commandExec(argc, args, pipes[i], pipes[i+1]);
 
-		if (pgrpId == 0) {
+		if (pgrpId == 0)
 			pgrpId = piped_pid;
-			addJob(c, pgrpId);
-		}
 		if (i == num_cmds - 1)
 			last_pid = piped_pid;
 
 		addProcess(piped_pid, pgrpId);
 	}
 
-	if (!isBackground)
+	if (!isBackground && pgrpId > 0)
 		tcsetpgrp(STDIN_FILENO, pgrpId);
 
-	int i = 0, exit_stat = -1;
-	while (i < num_cmds) {
-		int status;
-	    int exit_pid = wait(&status);
-	    if (exit_pid == last_pid && WIFEXITED(status))
-	    	exit_stat = WEXITSTATUS(status);
-	    ++i;
+	int exit_stat = -1;
+	for (process *p = p_first; p; p = p->next) {
+		if (p->pgid == pgrpId) {
+			int status;
+			int exit_pid = waitpid(p->pid, &status, 0);
+			if (exit_pid == last_pid && WIFEXITED(status))
+				exit_stat = WEXITSTATUS(status);
+		}
 	}
 
 	return exit_stat;
@@ -703,6 +702,7 @@ void booleanParser(char *c, int isBackground) {
 			return;
 		}
 		else if (pid > 0) {		//Parent process
+			addJob(c, pid);
 			return;
 		}
 		signal(SIGCHLD, SIG_DFL);
@@ -901,7 +901,6 @@ void myShell() {
 
 		signal(SIGCHLD, updateJobs);
 		signal(SIGINT, reset);
-		updateJobs();
 
 		char* cmd = readCommand();
 
@@ -925,7 +924,7 @@ int main(int argc, char const *argv[]) {
 	return 0;
 }
 
-// main -> myShell --(init)-> readCommand --(promptString, preprocessCmd, addToHistory) -> statementsParser -> 
+// main -> myShell --(init)-> readCommand --(promptString, preprocessCmd, addToHistory) -> statementsParser -> booleanParser ->
 // pipesParser --(initPipes, tokenise)-> commandExec -> builtInCmdExec 
 // --(closeShell, execLast, help, printHistory, source)-> handleRedirect
 
