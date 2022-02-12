@@ -129,6 +129,7 @@ void updateJobs();
 void printJobs();
 
 void reset(int);
+void childTerminated(int);
 
 void updateLast();
 void help(char*);
@@ -305,8 +306,6 @@ void killJob(int job_id) {
 }
 
 void updateJobs() {
-	int pid;
-	while ((pid = waitpid(-1, 0, WNOHANG)) > 0);
 	updateProcesses();
 
 	job *prev = job_first, *curr = job_first;
@@ -345,6 +344,12 @@ void reset(int sig) {
 	printf("\n");
 	fflush(stdout);
 	siglongjmp(ctrlc_buf, 1);
+}
+
+void childTerminated(int sig) {
+	int pid;
+	while ((pid = waitpid(-1, 0, WNOHANG)) > 0);
+	updateJobs();
 }
 
 /**********************************************************************************
@@ -470,7 +475,7 @@ char* promptString(){
 	char* str = malloc(7*8 + LOGIN_NAME_MAX + HOST_NAME_MAX + PWD_MAX_LEN + 5);
 	DBG_checkMalloc(str);
 
-	sprintf(str, BRIGHT RED "%s@%s" RESET ":" BRIGHT CYAN "%s\n" BRIGHT YELLOW "$ ", user, host, cwd);
+	sprintf(str, BRIGHT RED "%s@%s" RESET ":" BRIGHT CYAN "%s" BRIGHT YELLOW "$ ", user, host, cwd);
 	return str;
 }
 
@@ -706,6 +711,7 @@ void booleanParser(char *c, int isBackground) {
 			return;
 		}
 		signal(SIGCHLD, SIG_DFL);
+		signal(SIGINT, SIG_DFL);
 		setpgrp();
 		set_pgrpID = getpgrp();
 	}
@@ -899,7 +905,7 @@ void myShell() {
 		while (sigsetjmp(ctrlc_buf, 1) != 0);
 		tcsetpgrp(STDIN_FILENO, getpgid(0));
 
-		signal(SIGCHLD, updateJobs);
+		signal(SIGCHLD, childTerminated);
 		signal(SIGINT, reset);
 
 		char* cmd = readCommand();
