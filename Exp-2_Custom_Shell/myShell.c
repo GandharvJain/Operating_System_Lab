@@ -190,7 +190,7 @@ void killProcess(int pgrp_id) {
 		return;
 
 	process *prev = p_first;
-	if (pgrp_id > 0) {					//Kill all processes mathcing pgrp_id
+	if (pgrp_id > 0) {					//Kill all processes matching pgrp_id
 		killpg(pgrp_id, SIGKILL);
 
 		if (p_first->pgid == pgrp_id) {
@@ -345,7 +345,6 @@ void reset(int sig) {
 	fflush(stdout);
 	siglongjmp(ctrlc_buf, 1);
 }
-
 void childTerminated(int sig) {
 	int pid;
 	while ((pid = waitpid(-1, 0, WNOHANG)) > 0);
@@ -362,7 +361,6 @@ void updateLast() {
 		fgets(last_cmd, CMD_MAX_LEN, hist);
 	last_cmd[strlen(last_cmd) - 1] = '\0';
 }
-
 void help(char *cmd) {
 	if (cmd == NULL) {
 		printf(	"\nThese shell commands are defined internally.  Type 'help' to see this list.\n"
@@ -414,7 +412,6 @@ void help(char *cmd) {
 		fprintf(stderr, "No such built-in command: '%s'\n\n", cmd);
 	}
 }
-
 void source(char *filename) {
 	FILE *fd;
 	int line_num = 1;
@@ -437,7 +434,6 @@ void source(char *filename) {
 		}
 	}
 }
-
 void printHistory() {
 	char line[CMD_MAX_LEN] = "";
 	int i = 1;
@@ -764,7 +760,6 @@ void addToHistory(char* command) {
 		append_history(1, hist_file_path);
 	}
 	else if (hist_file) {
-		// fprintf(hist_file, "#%ld\n%s\n", time(0), command);
 		fprintf(hist_file, "%s\n", command);
 		fflush(hist_file);
 	}
