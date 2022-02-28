@@ -7,6 +7,8 @@
 ### Exp-2_Custom_Shell
 * myShell.c: Custom shell on linux.
 ### Exp-3_Custom_System_Call
-* userspace.c: Test custom system call added to Linux kernel..
+* userspace.c: Test custom system call added to Linux kernel.
 ### Exp-4_Collatz_Conjecture
 * collatz.c: Create child process which applies the collatz conjecture algorithm on a positive integer.
+### Exp-5_Fibonacci
+* fibonacci.c: Create child thread which calculates first n terms of the fibonacci sequence.
