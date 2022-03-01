@@ -3,7 +3,7 @@ Programming practice 4.27 in Operating Systems Concepts Silberschatz (10th ed.)
 Compile using:
 gcc -pthread fibonacci.c -o fibonacci.o
 Run using:
-./fibonacci.o [integer]
+./fibonacci.o [terms]
 */
 
 #include <stdio.h>
@@ -17,7 +17,7 @@ void print_fib(int);
 
 int main(int argc, char const *argv[]) {
 	if (argc < 2) {
-		printf("Usage: %s [integer]\n", argv[0]);
+		printf("Usage: %s [terms]\n", argv[0]);
 		return 1;
 	}
 

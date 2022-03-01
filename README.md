@@ -12,3 +12,5 @@
 * collatz.c: Create child process which applies the collatz conjecture algorithm on a positive integer.
 ### Exp-5_Fibonacci
 * fibonacci.c: Create child thread which calculates first n terms of the fibonacci sequence.
+### Exp-6_Matrix_Multiplication
+* matrix_mul.c: Multiply two matrices using multithreading (POSIX pthreads).
