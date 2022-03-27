@@ -1,11 +1,2 @@
-Exp-1_Process_Tree/process_tree.o
-Exp-1_Process_Tree/time_shm.o
-Exp-1_Process_Tree/time_pipe.o
-Exp-1_Process_Tree/pid_manager.o
-Exp-2_Custom_Shell/myShell.o
+*.o
 Exp-2_Custom_Shell/.myShell_history
-Exp-3_Custom_System_Call/userspace.o
-Exp-4_Collatz_Conjecture/collatz.o
-Exp-4_Collatz_Conjecture/collatz_thread.o
-Exp-5_Fibonacci/fibonacci.o
-Exp-6_Matrix_Multiplication/matrix_mul.o
