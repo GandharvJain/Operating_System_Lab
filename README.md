@@ -17,3 +17,5 @@
 * matrix_mul.c: Multiply two matrices using multithreading (POSIX pthreads).
 ### Exp-7_CPU_Scheduling
 * sched.c: Simulate CPU scheduling algorithms (FCFS, SJF and SRTF)
+### Exp-8_Synchronization_Problems
+* prdcr_cnsmr.c: Producer-Consumer synchronization problem
