@@ -19,3 +19,4 @@
 * sched.c: Simulate CPU scheduling algorithms (FCFS, SJF and SRTF)
 ### Exp-8_Synchronization_Problems
 * prdcr_cnsmr.c: Producer-Consumer synchronization problem
+* din_phil.c: Dining-Philosophers problem
