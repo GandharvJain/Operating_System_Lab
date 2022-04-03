@@ -50,6 +50,33 @@ void *philosopher(void *arg) {
 	}
 }
 
+void *philosopher_asymmetric(void *arg) {
+	int phil_id = *((int *)arg);
+	int is_odd = phil_id % 2;
+	int left = phil_id;
+	int right = (phil_id + 1) % n;
+
+	while (1) {
+		if (is_odd) {
+			sem_wait(&chopstick[left]);
+			sem_wait(&chopstick[right]);
+		}
+		else {
+			sem_wait(&chopstick[right]);
+			sem_wait(&chopstick[left]);
+		}
+
+		printState(phil_id, 1);
+		eat(phil_id);
+		printState(phil_id, 0);
+
+		sem_post(&chopstick[left]);
+		sem_post(&chopstick[right]);
+
+		think(phil_id);
+	}
+}
+
 int main(int argc, char const *argv[]) {
 	if (argc < 2) {
 		printf("Usage: %s [PHILOSOPHERS]\n", argv[0]);
