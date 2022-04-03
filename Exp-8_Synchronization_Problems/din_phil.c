@@ -109,6 +109,11 @@ int main(int argc, char const *argv[]) {
 	for (int i = 0; i < n; ++i)
 		pthread_join(thread_ids[i], NULL);
 
+	sem_destroy(&print_sem);
+	sem_destroy(&attempting_to_eat);
+	for (int i = 0; i < n; ++i)
+		sem_destroy(&chopstick[i]);
+
 	return 0;
 }
 
