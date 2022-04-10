@@ -65,7 +65,7 @@ int main(int argc, char const *argv[]) {
 
 	gettimeofday(&end, 0);
 
-	// display(h1, w1, h2, w2);
+	display(h1, w1, h2, w2);
 	double secnds = end.tv_sec - start.tv_sec;
 	double micro_secnds = end.tv_usec - start.tv_usec;
 	double runtime = secnds + micro_secnds / 1000000;
