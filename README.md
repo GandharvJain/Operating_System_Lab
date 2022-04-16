@@ -20,3 +20,5 @@
 ### Exp-8_Synchronization_Problems
 * prdcr_cnsmr.c: Producer-Consumer synchronization problem
 * din_phil.c: Dining-Philosophers problem
+### Exp-9_Bankers_Algorithm
+* banker.c: Banker's Algorithm
