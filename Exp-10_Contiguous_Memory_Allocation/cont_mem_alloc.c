@@ -21,11 +21,12 @@ typedef struct Mem_Block {
 	char name[MAX_NAME_LEN];
 	int start, size;
 	struct Mem_Block *next, *prev;
+	bool isHole;
 } Mem_Block;
 
 Mem_Block *head = NULL;
 
-Mem_Block* createMemoryBlock(char* name, int start, int rng, Mem_Block* nxt, Mem_Block* prv);
+Mem_Block* createMemoryBlock(char* name, int start, int rng, bool isUnused, Mem_Block* nxt, Mem_Block* prv);
 void userMenu(void);
 bool requestMemory(char* process_name, int amount, char fit);
 bool releaseMemory(char* process_name);
@@ -43,12 +44,13 @@ int main(int argc, char const *argv[]) {
 		printf("Enter a positive integer\n");
 		return 1;
 	}
-	head = createMemoryBlock("Unused", 0, n, NULL, NULL);
+	head = createMemoryBlock("Unused", 0, n, true, NULL, NULL);
 
+	userMenu();
 	bool running = true;
 	while (running) {
-		userMenu();
 		char *cmd;
+		printf("allocator> ");
 		int n = scanf("%ms", &cmd);
 		printf("\n");
 		if (strcmp(cmd, "RQ") == 0) {
@@ -86,13 +88,15 @@ int main(int argc, char const *argv[]) {
 			printf("Exiting..\n");
 			running = false;
 		}
-		else printf("Invalid command!\n");
+		else {
+			printf("Invalid command!\n");
+			userMenu();
+		}
 
 		if (n == 1) free(cmd);
 		printf("\n");
 		while ((getchar()) != '\n');
 	}
-
 	return 0;
 }
 
@@ -103,14 +107,13 @@ void userMenu() {
 	printf("Compact Memory : \"C\"\n");
 	printf("Memory status  : \"STAT\"\n");
 	printf("Exit           : \"X\"\n");
-	printf("allocator> ");
 }
 
 Mem_Block* findHole(int amount, char fit) {
 	Mem_Block *hole = NULL, *curr = head;
 	if (fit == 'F') {
 		for (; curr != NULL; curr = curr->next) {
-			if (strcmp(curr->name, "Unused") != 0)
+			if (!curr->isHole)
 				continue;
 			if (curr->size >= amount) {
 				hole = curr;
@@ -120,7 +123,7 @@ Mem_Block* findHole(int amount, char fit) {
 	}
 	else if (fit == 'B') {
 		for (int min_size = INT_MAX; curr != NULL; curr = curr->next) {
-			if (strcmp(curr->name, "Unused") != 0)
+			if (!curr->isHole)
 				continue;
 			if (curr->size < min_size && curr->size >= amount) {
 				min_size = curr->size;
@@ -130,7 +133,7 @@ Mem_Block* findHole(int amount, char fit) {
 	}
 	else if (fit == 'W') {
 		for (int max_size = amount - 1; curr != NULL; curr = curr->next) {
-			if (strcmp(curr->name, "Unused") != 0)
+			if (!curr->isHole)
 				continue;
 			if (curr->size > max_size) {
 				max_size = curr->size;
@@ -157,9 +160,10 @@ bool requestMemory(char* process_name, int amount, char fit) {
 	}
 	if (hole->size == amount) {
 		strcpy(hole->name, process_name);
+		hole->isHole = false;
 		return true;
 	}
-	new_block = createMemoryBlock(process_name, hole->start, amount, hole, hole->prev);
+	new_block = createMemoryBlock(process_name, hole->start, amount, false, hole, hole->prev);
 	hole->start += amount;
 	hole->size -= amount;
 	hole->prev = new_block;
@@ -180,15 +184,16 @@ bool releaseMemory(char* process_name) {
 		return false;
 	}
 	strcpy(curr->name, "Unused");
+	curr->isHole = true;
 	Mem_Block *prv = curr->prev, *nxt = curr->next;
-	if (nxt != NULL && strcmp(nxt->name, "Unused") == 0) {
+	if (nxt != NULL && nxt->isHole) {
 		curr->next = nxt->next;
 		if (nxt->next != NULL)
 			nxt->next->prev = curr;
 		curr->size += nxt->size;
 		free(nxt);
 	}
-	if (prv != NULL && strcmp(prv->name, "Unused") == 0) {
+	if (prv != NULL && prv->isHole) {
 		prv->next = curr->next;
 		if (curr->next != NULL)
 			curr->next->prev = prv;
@@ -204,7 +209,7 @@ void compactMemory() {
 	while (curr != NULL) {
 		prv = curr->prev;
 		nxt = curr->next;
-		if (strcmp(curr->name, "Unused") == 0) {
+		if (curr->isHole) {
 			unused_size += curr->size;
 
 			if (prv != NULL) prv->next = nxt;
@@ -218,9 +223,9 @@ void compactMemory() {
 		}
 		curr = nxt;
 	}
-	if (prv->next != NULL)
+	if (prv != NULL && prv->next != NULL)
 		prv = prv->next;
-	Mem_Block *temp = createMemoryBlock("Unused", curr_address, unused_size, NULL, prv);
+	Mem_Block *temp = createMemoryBlock("Unused", curr_address, unused_size, true, NULL, prv);
 	if (prv == NULL)
 		head = temp;
 	else
@@ -232,17 +237,18 @@ void printStatus() {
 		int start = curr->start;
 		int end = start + curr->size - 1;
 		char *str = "Process: ";
-		if (strcmp(curr->name, "Unused") == 0) str = "";
+		if (curr->isHole) str = "";
 
 		printf("Addresses [%d:%d] %s%s\n", start, end, str, curr->name);
 	}
 }
 
-Mem_Block* createMemoryBlock(char* name, int start, int rng, Mem_Block* nxt, Mem_Block* prv) {
+Mem_Block* createMemoryBlock(char* name, int start, int rng, bool isUnused, Mem_Block* nxt, Mem_Block* prv) {
 	Mem_Block* new_block = malloc(sizeof(Mem_Block));
 	strcpy(new_block->name, name);
 	new_block->start = start;
 	new_block->size = rng;
+	new_block->isHole = isUnused;
 	new_block->next = nxt;
 	new_block->prev = prv;
 	return new_block;
