@@ -68,6 +68,7 @@ int main(int argc, char const *argv[]) {
 		userMenu();
 		char *cmd;
 		int n = scanf("%ms", &cmd);
+		printf("\n");
 		if (strcmp(cmd, "RQ") == 0) {
 			int thread_id, request[n_rsrcs];
 			scanf("%d", &thread_id);
@@ -115,7 +116,7 @@ void userMenu() {
 	printf("\"RL [CUSTOMER] [INSTANCES_OF_R1] ... [INSTANCES_OF_R%d]\"\n", n_rsrcs);
 	printf("Print state       : \"*\"\n");
 	printf("Exit              : \"X\"\n");
-	printf("Enter command:\n");
+	printf("Enter command: ");
 }
 
 void printState() {
