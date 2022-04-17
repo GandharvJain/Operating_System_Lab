@@ -23,4 +23,4 @@
 ### Exp-9_Bankers_Algorithm
 * banker.c: Banker's Algorithm
 ### Exp-10_Contiguous_Memory_Allocation
-* cont_mem_alloc.c: Contiguous Memory ALlocation for First, Best and Worst fit algorithms
+* cont_mem_alloc.c: Contiguous Memory Allocation for First, Best and Worst fit algorithms
